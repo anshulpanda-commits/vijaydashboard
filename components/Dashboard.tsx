@@ -2,26 +2,11 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  Bar,
-  BarChart,
-  CartesianGrid,
-  Cell,
-  Legend,
-  Pie,
-  PieChart,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
+  Bar, BarChart, CartesianGrid, Cell, Legend,
+  Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from "recharts";
 import {
-  SalesData,
-  SKU,
-  SKU_COLORS,
-  SKU_LABELS,
-  SKUS,
-  StoreData,
-  TargetConfig,
+  SalesData, SKU, SKU_COLORS, SKU_LABELS, SKUS, StoreData, TargetConfig,
 } from "@/lib/types";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -71,9 +56,7 @@ function Section({ title, sub, children }: {
 
 // ─── Target config modal ──────────────────────────────────────────────────────
 
-function ConfigModal({
-  targets, stores, onSave, onClose,
-}: {
+function ConfigModal({ targets, stores, onSave, onClose }: {
   targets: TargetConfig; stores: StoreData[]; onSave: (t: TargetConfig) => void; onClose: () => void;
 }) {
   const [local, setLocal] = useState<TargetConfig>(targets);
@@ -115,18 +98,20 @@ function RawDataView({ stores }: { stores: StoreData[] }) {
     return <p className="text-gray-400 dark:text-slate-500 text-sm text-center py-20">No data loaded yet.</p>;
   }
 
-  const weeks = stores[0]?.weeks ?? [];
+  const days = stores[0]?.days ?? [];
 
-  const weekTotals = weeks.map((_, wi) => {
+  // Column totals per day per SKU
+  const dayTotals = days.map((_, di) => {
     const t: Record<SKU, number> & { total: number } = { brisk: 0, renpro: 0, stromgo: 0, halov2: 0, rengo: 0, total: 0 };
     for (const s of stores) {
-      const w = s.weeks[wi];
-      if (!w) continue;
-      for (const sku of SKUS) t[sku] += w[sku];
-      t.total += w.total;
+      const d = s.days[di];
+      if (!d) continue;
+      for (const sku of SKUS) t[sku] += d[sku];
+      t.total += d.total;
     }
     return t;
   });
+
   const grandTotalUnits = stores.reduce((s, r) => s + r.totalQty, 0);
   const grandTotalRevenue = stores.reduce((s, r) => s + r.mtdRevenue, 0);
 
@@ -135,34 +120,46 @@ function RawDataView({ stores }: { stores: StoreData[] }) {
       <div className="bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-2xl p-5">
         <div className="mb-4">
           <h2 className="text-base font-semibold text-gray-900 dark:text-white">Raw Sheet Data</h2>
-          <p className="text-xs text-gray-500 dark:text-slate-400 mt-0.5">Exactly as received from Google Sheets — units per SKU per week per store</p>
+          <p className="text-xs text-gray-500 dark:text-slate-400 mt-0.5">
+            Exactly as received from Google Sheets — daily units per SKU per store
+          </p>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-xs min-w-[700px] border-collapse">
             <thead>
+              {/* Row 1: date headers, each spanning 5 SKU cols + 1 total col */}
               <tr>
-                <th className="pb-1 pr-3 text-left text-gray-500 dark:text-slate-400 font-medium align-bottom" rowSpan={2}>Store</th>
-                {weeks.map((w) => (
+                <th className="pb-1 pr-3 text-left text-gray-500 dark:text-slate-400 font-medium align-bottom" rowSpan={2}>
+                  Store
+                </th>
+                {days.map((d) => (
                   <th
-                    key={w.label}
+                    key={d.date}
                     colSpan={SKUS.length + 1}
                     className="pb-1 px-1 text-center text-gray-800 dark:text-slate-200 font-semibold border-b border-gray-200 dark:border-slate-600 whitespace-nowrap"
                   >
-                    {w.label}
+                    {d.date}
                   </th>
                 ))}
-                <th className="pb-1 px-2 text-right text-gray-500 dark:text-slate-400 font-medium align-bottom" rowSpan={2}>Total Units</th>
-                <th className="pb-1 pl-2 text-right text-gray-500 dark:text-slate-400 font-medium align-bottom whitespace-nowrap" rowSpan={2}>MTD Rev</th>
+                <th className="pb-1 px-2 text-right text-gray-500 dark:text-slate-400 font-medium align-bottom whitespace-nowrap" rowSpan={2}>
+                  MTD Units
+                </th>
+                <th className="pb-1 pl-2 text-right text-gray-500 dark:text-slate-400 font-medium align-bottom whitespace-nowrap" rowSpan={2}>
+                  MTD Rev
+                </th>
               </tr>
+              {/* Row 2: SKU sub-headers under each date */}
               <tr>
-                {weeks.map((w) => (
+                {days.map((d) => (
                   <>
                     {SKUS.map((sku) => (
-                      <th key={`${w.label}-${sku}`} className="py-1.5 px-1.5 text-right font-medium whitespace-nowrap" style={{ color: SKU_COLORS[sku] }}>
+                      <th key={`${d.date}-${sku}`} className="py-1.5 px-1.5 text-right font-medium whitespace-nowrap" style={{ color: SKU_COLORS[sku] }}>
                         {SKU_LABELS[sku]}
                       </th>
                     ))}
-                    <th key={`${w.label}-total`} className="py-1.5 px-1.5 text-right text-gray-500 dark:text-slate-400 font-medium">Wk Total</th>
+                    <th key={`${d.date}-total`} className="py-1.5 px-1.5 text-right text-gray-500 dark:text-slate-400 font-medium">
+                      Day
+                    </th>
                   </>
                 ))}
               </tr>
@@ -176,15 +173,15 @@ function RawDataView({ stores }: { stores: StoreData[] }) {
                       {s.shortName}
                     </span>
                   </td>
-                  {s.weeks.map((w) => (
+                  {s.days.map((d) => (
                     <>
                       {SKUS.map((sku) => (
-                        <td key={`${w.label}-${sku}`} className={`py-2 px-1.5 text-right ${w[sku] > 0 ? "text-gray-800 dark:text-white" : "text-gray-300 dark:text-slate-600"}`}>
-                          {w[sku] || "—"}
+                        <td key={`${d.date}-${sku}`} className={`py-2 px-1.5 text-right ${d[sku] > 0 ? "text-gray-800 dark:text-white" : "text-gray-300 dark:text-slate-600"}`}>
+                          {d[sku] || "—"}
                         </td>
                       ))}
-                      <td key={`${w.label}-total`} className={`py-2 px-1.5 text-right font-semibold ${w.total > 0 ? "text-indigo-600 dark:text-indigo-400" : "text-gray-300 dark:text-slate-600"}`}>
-                        {w.total || "—"}
+                      <td key={`${d.date}-total`} className={`py-2 px-1.5 text-right font-semibold ${d.total > 0 ? "text-indigo-600 dark:text-indigo-400" : "text-gray-300 dark:text-slate-600"}`}>
+                        {d.total || "—"}
                       </td>
                     </>
                   ))}
@@ -198,20 +195,20 @@ function RawDataView({ stores }: { stores: StoreData[] }) {
             <tfoot>
               <tr className="border-t-2 border-gray-300 dark:border-slate-600 font-semibold">
                 <td className="pt-3 pr-3 text-gray-500 dark:text-slate-400">Total</td>
-                {weekTotals.map((wt, wi) => (
+                {dayTotals.map((dt, di) => (
                   <>
                     {SKUS.map((sku) => (
-                      <td key={`total-${wi}-${sku}`} className="pt-3 px-1.5 text-right text-gray-700 dark:text-slate-200">
-                        {wt[sku] || "—"}
+                      <td key={`total-${di}-${sku}`} className="pt-3 px-1.5 text-right text-gray-700 dark:text-slate-200">
+                        {dt[sku] || "—"}
                       </td>
                     ))}
-                    <td key={`total-${wi}-sum`} className="pt-3 px-1.5 text-right text-indigo-600 dark:text-indigo-400">
-                      {wt.total || "—"}
+                    <td key={`total-${di}-sum`} className="pt-3 px-1.5 text-right text-indigo-600 dark:text-indigo-400">
+                      {dt.total || "—"}
                     </td>
                   </>
                 ))}
                 <td className="pt-3 px-2 text-right text-indigo-600 dark:text-indigo-400">{grandTotalUnits}</td>
-                <td className="pt-3 pl-2 text-right text-emerald-600 dark:text-emerald-400">{fmtRevFull(grandTotalRevenue)}</td>
+                <td className="pt-3 pl-2 text-right text-emerald-600 dark:text-emerald-400">{grandTotalRevenue > 0 ? fmtRevFull(grandTotalRevenue) : "—"}</td>
               </tr>
             </tfoot>
           </table>
@@ -228,7 +225,6 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
-
   const [targets, setTargets] = useState<TargetConfig>({});
   const [showConfig, setShowConfig] = useState(false);
   const [view, setView] = useState<"dashboard" | "raw">("dashboard");
@@ -275,7 +271,6 @@ export default function Dashboard() {
   // ── Derived data ────────────────────────────────────────────────────────────
 
   const stores = data?.stores ?? [];
-  const weekSummaries = data?.weekSummaries ?? [];
   const grandTotalUnits = data?.grandTotalUnits ?? 0;
   const grandTotalRevenue = data?.grandTotalRevenue ?? 0;
   const month = data?.month ?? "";
@@ -289,21 +284,20 @@ export default function Dashboard() {
 
   const avgRevPerUnit = grandTotalUnits > 0 ? Math.round(grandTotalRevenue / grandTotalUnits) : 0;
 
-  const weeklyUnitsData = useMemo(() => {
-    const weekMap: Record<string, Record<SKU, number>> = {};
+  // Daily units chart — one bar per day, stacked by SKU, aggregated across all stores
+  const dailyUnitsData = useMemo(() => {
+    const dayMap: Record<string, Record<SKU, number>> = {};
     for (const store of stores) {
-      for (const week of store.weeks) {
-        if (!weekMap[week.label]) {
-          weekMap[week.label] = { brisk: 0, renpro: 0, stromgo: 0, halov2: 0, rengo: 0 };
+      for (const day of store.days) {
+        if (!dayMap[day.date]) {
+          dayMap[day.date] = { brisk: 0, renpro: 0, stromgo: 0, halov2: 0, rengo: 0 };
         }
-        for (const sku of SKUS) weekMap[week.label][sku] += week[sku];
+        for (const sku of SKUS) dayMap[day.date][sku] += day[sku];
       }
     }
-    return Object.entries(weekMap).map(([label, skus]) => ({
-      label: label.replace(/week\s*(\d)/i, "Wk $1").replace(/\(.*\)/, "").trim(),
-      fullLabel: label,
-      ...skus,
-    }));
+    return Object.entries(dayMap)
+      .filter(([, skus]) => Object.values(skus).some(v => v > 0))
+      .map(([date, skus]) => ({ date, ...skus }));
   }, [stores]);
 
   const revenueByStore = useMemo(
@@ -322,10 +316,10 @@ export default function Dashboard() {
   );
 
   const skuMix = useMemo(() => {
-    const totals = { brisk: 0, renpro: 0, stromgo: 0, halov2: 0, rengo: 0 };
+    const totals: Record<SKU, number> = { brisk: 0, renpro: 0, stromgo: 0, halov2: 0, rengo: 0 };
     for (const store of stores) {
-      for (const week of store.weeks) {
-        for (const sku of SKUS) totals[sku] += week[sku];
+      for (const day of store.days) {
+        for (const sku of SKUS) totals[sku] += day[sku];
       }
     }
     return SKUS
@@ -333,35 +327,15 @@ export default function Dashboard() {
       .filter((e) => e.value > 0);
   }, [stores]);
 
-  const walkinData = useMemo(() => {
-    const totals: Record<SKU, { walkin: number; sold: number }> = {
-      brisk: { walkin: 0, sold: 0 }, renpro: { walkin: 0, sold: 0 },
-      stromgo: { walkin: 0, sold: 0 }, halov2: { walkin: 0, sold: 0 }, rengo: { walkin: 0, sold: 0 },
-    };
-    for (const store of stores) {
-      for (const sku of SKUS) {
-        totals[sku].walkin += store.walkin?.[sku] ?? 0;
-        totals[sku].sold += store.weeks.reduce((s, w) => s + w[sku], 0);
-      }
-    }
-    return SKUS.map((sku) => ({
-      sku, label: SKU_LABELS[sku], color: SKU_COLORS[sku],
-      walkin: totals[sku].walkin, sold: totals[sku].sold,
-      rate: totals[sku].walkin > 0 ? Math.round((totals[sku].sold / totals[sku].walkin) * 100) : 0,
-    }));
-  }, [stores]);
-
-  const hasWalkin = stores.some((s) => s.walkin);
-
-  // Chart theme values
-  const chartGrid = isDark ? "#334155" : "#E2E8F0";
-  const chartTick = isDark ? "#94A3B8" : "#64748B";
+  // Chart theme colours
+  const chartGrid   = isDark ? "#334155" : "#E2E8F0";
+  const chartTick   = isDark ? "#94A3B8" : "#64748B";
   const chartCursor = isDark ? "#1E293B" : "#F1F5F9";
   const tooltipStyle = isDark
     ? { backgroundColor: "#1E293B", border: "1px solid #334155", borderRadius: 8, color: "#F1F5F9", fontSize: 12 }
     : { backgroundColor: "#FFFFFF", border: "1px solid #E2E8F0", borderRadius: 8, color: "#1E293B", fontSize: 12 };
 
-  // ── Loading / error states ───────────────────────────────────────────────────
+  // ── Loading / error ──────────────────────────────────────────────────────────
 
   if (loading) {
     return (
@@ -377,10 +351,7 @@ export default function Dashboard() {
         <div className="max-w-lg bg-white dark:bg-slate-800 border border-red-500/30 rounded-2xl p-8 text-center">
           <h1 className="text-gray-900 dark:text-white text-xl font-semibold mb-3">Could not load dashboard</h1>
           <p className="text-gray-500 dark:text-slate-400 text-sm mb-5">{error}</p>
-          <button
-            onClick={() => loadData()}
-            className="bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl px-5 py-2.5 text-sm font-medium transition-colors"
-          >
+          <button onClick={() => loadData()} className="bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl px-5 py-2.5 text-sm font-medium transition-colors">
             Try again
           </button>
         </div>
@@ -410,15 +381,12 @@ export default function Dashboard() {
             </p>
           </div>
           <div className="flex items-center gap-2 flex-wrap">
-            {/* Dark/Light toggle */}
             <button
               onClick={() => setIsDark((d) => !d)}
               className="text-xs bg-gray-100 dark:bg-slate-800 hover:bg-gray-200 dark:hover:bg-slate-700 border border-gray-200 dark:border-slate-700 rounded-lg px-3 py-2 text-gray-700 dark:text-slate-300 transition-colors"
-              title="Toggle theme"
             >
               {isDark ? "Light mode" : "Dark mode"}
             </button>
-            {/* Tab switcher */}
             <div className="flex bg-gray-100 dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-lg p-0.5 gap-0.5">
               <button
                 onClick={() => setView("dashboard")}
@@ -461,20 +429,20 @@ export default function Dashboard() {
         {/* Summary cards */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           <Card label="MTD Units" value={grandTotalUnits.toString()} sub={`across ${stores.filter(s => s.totalQty > 0).length} stores`} color="text-indigo-600 dark:text-indigo-400" />
-          <Card label="MTD Revenue" value={fmtRev(grandTotalRevenue)} sub={fmtRevFull(grandTotalRevenue)} color="text-emerald-600 dark:text-emerald-400" />
+          <Card label="MTD Revenue" value={fmtRev(grandTotalRevenue)} sub={grandTotalRevenue > 0 ? fmtRevFull(grandTotalRevenue) : "not yet entered"} color="text-emerald-600 dark:text-emerald-400" />
           <Card label="Top Store" value={bestStore} sub="by units sold" color="text-amber-600 dark:text-amber-400" />
-          <Card label="Avg Rev / Unit" value={fmtRev(avgRevPerUnit)} sub="blended across SKUs" />
+          <Card label="Avg Rev / Unit" value={avgRevPerUnit > 0 ? fmtRev(avgRevPerUnit) : "—"} sub="blended across SKUs" />
         </div>
 
-        {/* Weekly units — stacked by SKU */}
-        <Section title="Weekly Units by SKU" sub="All stores combined — stacked by product">
-          {weeklyUnitsData.length === 0 ? (
+        {/* Daily units — stacked by SKU */}
+        <Section title="Daily Units by SKU" sub="All stores combined — stacked by product">
+          {dailyUnitsData.length === 0 ? (
             <p className="text-gray-400 dark:text-slate-500 text-sm text-center py-10">No data</p>
           ) : (
             <ResponsiveContainer width="100%" height={300}>
-              <BarChart data={weeklyUnitsData} margin={{ top: 4, right: 8, left: -8, bottom: 0 }}>
+              <BarChart data={dailyUnitsData} margin={{ top: 4, right: 8, left: -8, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke={chartGrid} />
-                <XAxis dataKey="label" tick={{ fill: chartTick, fontSize: 12 }} axisLine={false} tickLine={false} />
+                <XAxis dataKey="date" tick={{ fill: chartTick, fontSize: 12 }} axisLine={false} tickLine={false} />
                 <YAxis tick={{ fill: chartTick, fontSize: 12 }} axisLine={false} tickLine={false} allowDecimals={false} />
                 <Tooltip contentStyle={tooltipStyle} cursor={{ fill: chartCursor }} />
                 <Legend wrapperStyle={{ fontSize: 12, color: chartTick, paddingTop: 12 }} />
@@ -492,12 +460,12 @@ export default function Dashboard() {
 
           <Section title="MTD Revenue by Store" sub="Actual revenue from sheet">
             {revenueByStore.length === 0 ? (
-              <p className="text-gray-400 dark:text-slate-500 text-sm text-center py-10">No revenue data</p>
+              <p className="text-gray-400 dark:text-slate-500 text-sm text-center py-10">No revenue data entered yet</p>
             ) : (
               <ResponsiveContainer width="100%" height={260}>
                 <BarChart data={revenueByStore} layout="vertical" margin={{ top: 0, right: 16, left: 0, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke={chartGrid} horizontal={false} />
-                  <XAxis type="number" tick={{ fill: chartTick, fontSize: 10 }} axisLine={false} tickLine={false} tickFormatter={(v) => fmtRev(v)} />
+                  <XAxis type="number" tick={{ fill: chartTick, fontSize: 10 }} axisLine={false} tickLine={false} tickFormatter={fmtRev} />
                   <YAxis type="category" dataKey="store" width={76} tick={{ fill: chartTick, fontSize: 10 }} axisLine={false} tickLine={false} />
                   <Tooltip contentStyle={tooltipStyle} formatter={(v: number) => [fmtRevFull(v), "Revenue"]} cursor={{ fill: chartCursor }} />
                   <Bar dataKey="revenue" radius={[0, 4, 4, 0]}>
@@ -508,7 +476,7 @@ export default function Dashboard() {
             )}
           </Section>
 
-          <Section title="MTD Units by Store" sub="vs monthly target — click header to set">
+          <Section title="MTD Units by Store" sub="vs monthly target">
             <div className="space-y-3">
               {unitsByStore.map((row, i) => {
                 const pct = Math.min(100, row.target > 0 ? (row.units / row.target) * 100 : 0);
@@ -561,56 +529,17 @@ export default function Dashboard() {
           </div>
         </Section>
 
-        {/* Walkin conversion */}
-        {hasWalkin && (
-          <Section title="Walkin Conversion by SKU" sub="Total inquiries vs units sold this month">
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="text-left text-xs text-gray-500 dark:text-slate-400 border-b border-gray-200 dark:border-slate-700">
-                    <th className="pb-2 pr-4 font-medium">SKU</th>
-                    <th className="pb-2 px-3 font-medium text-right">Walkins</th>
-                    <th className="pb-2 px-3 font-medium text-right">Sold</th>
-                    <th className="pb-2 pl-3 font-medium text-right">Conversion</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100 dark:divide-slate-700/50">
-                  {walkinData.map((row) => (
-                    <tr key={row.sku} className="hover:bg-gray-50 dark:hover:bg-slate-700/20">
-                      <td className="py-2 pr-4 flex items-center gap-2">
-                        <span className="w-2.5 h-2.5 rounded-full" style={{ background: row.color }} />
-                        <span className="text-gray-800 dark:text-slate-200">{row.label}</span>
-                      </td>
-                      <td className="py-2 px-3 text-right text-gray-600 dark:text-slate-300">{row.walkin || "—"}</td>
-                      <td className="py-2 px-3 text-right text-gray-900 dark:text-white font-medium">{row.sold || "—"}</td>
-                      <td className="py-2 pl-3 text-right">
-                        {row.walkin > 0 ? (
-                          <span className={`font-semibold ${row.rate >= 50 ? "text-emerald-600 dark:text-emerald-400" : row.rate >= 25 ? "text-amber-600 dark:text-amber-400" : "text-red-600 dark:text-red-400"}`}>
-                            {row.rate}%
-                          </span>
-                        ) : "—"}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </Section>
-        )}
-
-        {/* Store detail table */}
-        <Section title="Store Detail" sub="Units by week + MTD revenue">
+        {/* Store detail table — daily totals */}
+        <Section title="Store Detail" sub="Units per day + MTD totals">
           <div className="overflow-x-auto">
             <table className="w-full text-sm min-w-[640px]">
               <thead>
                 <tr className="text-left text-xs text-gray-500 dark:text-slate-400 border-b border-gray-200 dark:border-slate-700">
                   <th className="pb-2 pr-4 font-medium">Store</th>
-                  {stores[0]?.weeks.map((w, i) => (
-                    <th key={i} className="pb-2 px-2 font-medium text-right whitespace-nowrap">
-                      {w.label.replace(/week\s*(\d)/i, "Wk $1").replace(/\(.*\)/, "").trim()}
-                    </th>
+                  {stores[0]?.days.map((d, i) => (
+                    <th key={i} className="pb-2 px-2 font-medium text-right whitespace-nowrap">{d.date}</th>
                   ))}
-                  <th className="pb-2 px-2 font-medium text-right">Total Units</th>
+                  <th className="pb-2 px-2 font-medium text-right">MTD Units</th>
                   <th className="pb-2 pl-2 font-medium text-right">MTD Revenue</th>
                 </tr>
               </thead>
@@ -623,8 +552,8 @@ export default function Dashboard() {
                         <span className="text-gray-800 dark:text-slate-200 font-medium">{s.shortName}</span>
                       </span>
                     </td>
-                    {s.weeks.map((w, j) => (
-                      <td key={j} className="py-2 px-2 text-right text-gray-600 dark:text-slate-300">{w.total || "—"}</td>
+                    {s.days.map((d, j) => (
+                      <td key={j} className="py-2 px-2 text-right text-gray-600 dark:text-slate-300">{d.total || "—"}</td>
                     ))}
                     <td className="py-2 px-2 text-right text-indigo-600 dark:text-indigo-400 font-semibold">{s.totalQty || "—"}</td>
                     <td className="py-2 pl-2 text-right text-emerald-600 dark:text-emerald-400 font-semibold">
@@ -636,44 +565,20 @@ export default function Dashboard() {
               <tfoot>
                 <tr className="border-t border-gray-300 dark:border-slate-600 font-semibold text-right">
                   <td className="pt-3 pr-4 text-left text-gray-500 dark:text-slate-400">Total</td>
-                  {stores[0]?.weeks.map((_, j) => (
+                  {stores[0]?.days.map((_, j) => (
                     <td key={j} className="pt-3 px-2 text-gray-700 dark:text-slate-300">
-                      {stores.reduce((s, r) => s + (r.weeks[j]?.total ?? 0), 0) || "—"}
+                      {stores.reduce((s, r) => s + (r.days[j]?.total ?? 0), 0) || "—"}
                     </td>
                   ))}
                   <td className="pt-3 px-2 text-indigo-600 dark:text-indigo-400">{grandTotalUnits}</td>
-                  <td className="pt-3 pl-2 text-emerald-600 dark:text-emerald-400">{fmtRevFull(grandTotalRevenue)}</td>
+                  <td className="pt-3 pl-2 text-emerald-600 dark:text-emerald-400">
+                    {grandTotalRevenue > 0 ? fmtRevFull(grandTotalRevenue) : "—"}
+                  </td>
                 </tr>
               </tfoot>
             </table>
           </div>
         </Section>
-
-        {/* Weekly Revenue Summary */}
-        {weekSummaries.length > 0 && (
-          <Section title="Weekly Revenue Summary" sub="Aggregate across all stores">
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="text-xs text-gray-500 dark:text-slate-400 border-b border-gray-200 dark:border-slate-700 text-left">
-                    <th className="pb-2 pr-4 font-medium">Period</th>
-                    <th className="pb-2 px-3 font-medium text-right">Units</th>
-                    <th className="pb-2 pl-3 font-medium text-right">Revenue</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100 dark:divide-slate-700/40">
-                  {weekSummaries.map((w) => (
-                    <tr key={w.label} className="hover:bg-gray-50 dark:hover:bg-slate-700/20">
-                      <td className="py-2 pr-4 text-gray-700 dark:text-slate-300 capitalize">{w.label}</td>
-                      <td className="py-2 px-3 text-right text-gray-900 dark:text-white">{w.units}</td>
-                      <td className="py-2 pl-3 text-right text-emerald-600 dark:text-emerald-400">{fmtRevFull(w.revenue)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </Section>
-        )}
 
         <p className="text-center text-xs text-gray-400 dark:text-slate-600 pb-6">
           Data fetched live from Google Sheets · {title}

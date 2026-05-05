@@ -18,44 +18,35 @@ export const SKU_COLORS: Record<SKU, string> = {
   rengo: "#F87171",
 };
 
-// Units sold in one week (all SKUs)
-export interface WeekUnits {
-  label: string; // "Week 1 (1st-8th Mar)"
+export interface DayUnits {
+  date: string;       // "May 1", "May 2", etc.
   brisk: number;
   renpro: number;
   stromgo: number;
   halov2: number;
   rengo: number;
   total: number;
+  mtdRevenue: number; // MTD revenue column after this day (accumulates)
 }
 
-// Per-store data parsed from the "Overall Sales" section
 export interface StoreData {
   name: string;
   shortName: string;
-  weeks: WeekUnits[]; // one per week column in the sheet
-  totalQty: number;   // Total QTY column (units)
-  mtdRevenue: number; // MTD column (₹, Indian comma format reconstructed)
-  walkin?: Partial<Record<SKU, number>>; // from "Overall Walkin" section
-}
-
-// From the "Store Location" summary section at the bottom
-export interface WeekSummary {
-  label: string;   // "1st week", "2nd week", …
-  units: number;
-  revenue: number; // ₹
+  days: DayUnits[];
+  totalQty: number;   // MTD units (col B in sheet)
+  mtdRevenue: number; // latest non-zero MTD revenue across all days
+  walkin?: Partial<Record<SKU, number>>;
 }
 
 export interface SalesData {
-  title: string;   // "MAR 2025 Sales Summary: Vijay sales"
-  month: string;   // "MAR 2025"
+  title: string;
+  month: string;
   stores: StoreData[];
-  weekSummaries: WeekSummary[];
   grandTotalUnits: number;
   grandTotalRevenue: number;
   lastUpdated: string;
 }
 
 export interface TargetConfig {
-  [store: string]: number; // monthly unit target
+  [store: string]: number;
 }

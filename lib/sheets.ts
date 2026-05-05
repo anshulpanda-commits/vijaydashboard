@@ -1,40 +1,25 @@
-import { SKU, SalesData, StoreData, WeekSummary, WeekUnits } from "./types";
+import { SKU, SalesData, StoreData, DayUnits } from "./types";
 
-const SHEET_ID =
-  process.env.SHEET_ID || "1QF7DvG8UISXlMpHeFapjpe-niy1akY-8IGzD6ehnHQA";
+const SHEET_ID = process.env.SHEET_ID || "1QF7DvG8UISXlMpHeFapjpe-niy1akY-8IGzD6ehnHQA";
 const SHEET_GID = process.env.SHEET_GID || "1589162378";
 
-// ─── Sheet structure (confirmed from CSV export) ───────────────────────────────
+// ─── Sheet structure ──────────────────────────────────────────────────────────
 //
-// Row 0: Title — "MAR 2025 Sales Summary: Vijay sales"
-// Row 1: "Overall Sales"
-// Row 2: Week headers — "Week 1(1st-8th Mar)" [col 1], "Week 2…" [col 6], …
-//         "Total QTY" [col 21], "MTD" [col 22]
-// Row 3: SKU sub-headers — Brisk, Renpro, Stromgo, Halov2, Rengo (×4 weeks)
-// Row 4+: Store data rows (store name in col 0)
-// "Total" row marks end of sales section
+// Row 0: Export date  e.g. "5/5/2026,,,,..."
+// Row 1: Date headers e.g. ",,May 1,,,,,,May 2,,,,,,May 3,..."
+//        Date label appears at col 2, then every 6 cols (5 SKUs + 1 MTD col)
+// Row 2: Column hdrs  "Daily Sales","MTD Units","Brisk","Halov2","Stromgo","Renpro","Rengo","MTD",...
+// Row 3: Empty
+// Row 4+: Store rows  col 0 = store name, col 1 = MTD units, then day blocks
+// "Total" row marks end of data
 //
-// MTD column is in Indian number format (e.g. ₹2,84,000) which CSV splits
-// across multiple cells: ["2", "84", "000"]. We rejoin them by concatenation.
-//
-// After the sales section:
-//   "Overall Walkin" section — SKU footfall per store
-//   "Store Location" section — weekly unit + revenue totals
+// Each day block is 6 columns wide: [SKU1, SKU2, SKU3, SKU4, SKU5, MTD_Revenue]
+// The MTD_Revenue column accumulates: last non-zero value = current MTD revenue.
 // ─────────────────────────────────────────────────────────────────────────────
 
 function num(v: string | undefined): number {
   if (!v || !v.trim()) return 0;
   const n = parseInt(v.replace(/[^0-9]/g, ""), 10);
-  return isNaN(n) ? 0 : n;
-}
-
-// Indian comma format: ["2","84","000"] → 284000
-function parseIndianNum(parts: string[]): number {
-  const joined = parts
-    .map((p) => p.trim())
-    .filter(Boolean)
-    .join("");
-  const n = parseInt(joined, 10);
   return isNaN(n) ? 0 : n;
 }
 
@@ -66,156 +51,89 @@ function parseCSV(text: string): string[][] {
   return rows;
 }
 
-// Discover SKU order from a header row starting at `startCol`
-function skuOrderFromRow(row: string[], startCol: number): SKU[] {
-  const order: SKU[] = [];
-  for (let c = startCol; c < row.length && order.length < 5; c++) {
-    const h = (row[c] || "").toLowerCase().trim();
-    if (h === "brisk") order.push("brisk");
-    else if (h.startsWith("renp")) order.push("renpro");
-    else if (h.includes("strom")) order.push("stromgo");
-    else if (h.includes("halo")) order.push("halov2");
-    else if (h.startsWith("reng")) order.push("rengo");
-  }
-  return order.length > 0 ? order : ["brisk", "renpro", "stromgo", "halov2", "rengo"];
+function detectSku(header: string): SKU | null {
+  const h = header.toLowerCase().trim();
+  if (h === "brisk") return "brisk";
+  if (h.startsWith("renp") || h === "ren pro") return "renpro";
+  if (h.includes("strom")) return "stromgo";
+  if (h.includes("halo")) return "halov2";
+  if (h.startsWith("reng") || h === "ren go") return "rengo";
+  return null;
 }
 
 function parseSalesData(rows: string[][]): SalesData {
-  // ── Title & month ──────────────────────────────────────────────────────────
-  const title = (rows[0]?.[0] ?? "").trim();
-  const monthMatch = title.match(/^([A-Z]+ \d{4})/i);
-  const month = monthMatch?.[1] ?? "";
+  // Row 0: export date — extract year
+  const exportDateStr = (rows[0]?.[0] ?? "").trim();
+  const yearMatch = exportDateStr.match(/\d{4}/);
+  const year = yearMatch ? yearMatch[0] : new Date().getFullYear().toString();
 
-  // ── Find "Overall Sales" section ──────────────────────────────────────────
-  let salesRow = -1;
-  for (let r = 0; r < rows.length; r++) {
-    if ((rows[r][0] ?? "").toLowerCase().includes("overall sales")) {
-      salesRow = r;
-      break;
-    }
-  }
-  if (salesRow === -1) salesRow = 1;
+  const dateHeaderRow = rows[1] ?? [];
+  const colHeaderRow  = rows[2] ?? [];
 
-  const weekHeaderRow = rows[salesRow + 1] ?? [];
-  const skuHeaderRow = rows[salesRow + 2] ?? [];
-  const dataStartRow = salesRow + 3;
-
-  // ── Discover week column positions ─────────────────────────────────────────
-  const weekBlocks: { label: string; startCol: number }[] = [];
-  let totalQtyCol = 21;
-  let mtdStartCol = 22;
-
-  for (let c = 0; c < weekHeaderRow.length; c++) {
-    const cell = (weekHeaderRow[c] ?? "").trim();
-    if (/week\s*\d/i.test(cell)) {
-      weekBlocks.push({ label: cell, startCol: c });
-    } else if (/total\s*qty/i.test(cell)) {
-      totalQtyCol = c;
-    } else if (/^mtd$/i.test(cell)) {
-      mtdStartCol = c;
-    }
+  // Discover day blocks: non-empty cells in date header row from col 2 onwards.
+  // Each block is 6 cols wide: 5 SKUs starting at startCol, MTD at startCol+5.
+  const dayBlocks: Array<{ date: string; startCol: number; mtdCol: number }> = [];
+  for (let c = 2; c < dateHeaderRow.length; c++) {
+    const cell = (dateHeaderRow[c] ?? "").trim();
+    if (cell) dayBlocks.push({ date: cell, startCol: c, mtdCol: c + 5 });
   }
 
-  // Default to 4 weeks of 5 SKUs each if discovery fails
-  if (weekBlocks.length === 0) {
-    for (let w = 0; w < 4; w++) {
-      weekBlocks.push({ label: `Week ${w + 1}`, startCol: 1 + w * 5 });
-    }
-  }
+  // Extract month name from first date (e.g. "May 1" → "May")
+  const firstDate = dayBlocks[0]?.date ?? "";
+  const monthName = (firstDate.match(/^([A-Za-z]+)/) ?? [])[1] ?? "";
+  const month = monthName ? `${monthName} ${year}` : "";
+  const title = month ? `${month} Sales — Vijay Sales` : "Sales Dashboard";
 
-  // ── Parse store rows ────────────────────────────────────────────────────────
-  const skuOrder = skuOrderFromRow(skuHeaderRow, weekBlocks[0]?.startCol ?? 1);
+  // Detect SKU order from column header row (first 5 SKU-like headers from col 2)
+  const skuOrder: SKU[] = [];
+  for (let c = 2; c < colHeaderRow.length && skuOrder.length < 5; c++) {
+    const sku = detectSku(colHeaderRow[c] ?? "");
+    if (sku && !skuOrder.includes(sku)) skuOrder.push(sku);
+  }
+  const finalSkuOrder: SKU[] = skuOrder.length === 5
+    ? skuOrder
+    : ["brisk", "halov2", "stromgo", "renpro", "rengo"];
+
+  // Parse store rows starting at row 4 (index 3)
   const stores: StoreData[] = [];
-  let totalRowData: string[] = [];
+  let grandTotalUnits = 0;
 
-  for (let r = dataStartRow; r < rows.length; r++) {
+  for (let r = 3; r < rows.length; r++) {
     const row = rows[r];
     const name = (row[0] ?? "").trim();
     if (!name) continue;
-    if (/^total/i.test(name)) { totalRowData = row; break; }
-    if (/overall|store location/i.test(name)) break;
+    if (/^total/i.test(name)) {
+      grandTotalUnits = num(row[1]);
+      break;
+    }
 
-    const weeks: WeekUnits[] = weekBlocks.map(({ label, startCol }) => {
+    const totalQty = num(row[1]); // col B = MTD units
+
+    const days: DayUnits[] = dayBlocks.map(({ date, startCol, mtdCol }) => {
+      const d: DayUnits = { date, brisk: 0, renpro: 0, stromgo: 0, halov2: 0, rengo: 0, total: 0, mtdRevenue: 0 };
       let total = 0;
-      const w: WeekUnits = { label, brisk: 0, renpro: 0, stromgo: 0, halov2: 0, rengo: 0, total: 0 };
-      skuOrder.forEach((sku, i) => {
+      finalSkuOrder.forEach((sku, i) => {
         const v = num(row[startCol + i]);
-        w[sku] = v;
+        d[sku] = v;
         total += v;
       });
-      w.total = total;
-      return w;
+      d.total = total;
+      d.mtdRevenue = num(row[mtdCol]);
+      return d;
     });
 
-    const totalQty = num(row[totalQtyCol]);
-    const mtdRevenue = parseIndianNum(row.slice(mtdStartCol));
+    // Use the last non-zero MTD revenue as the store's current MTD revenue
+    const mtdRevenue = [...days].reverse().find(d => d.mtdRevenue > 0)?.mtdRevenue ?? 0;
 
-    stores.push({
-      name,
-      shortName: storeShortName(name),
-      weeks,
-      totalQty,
-      mtdRevenue,
-    });
+    stores.push({ name, shortName: storeShortName(name), days, totalQty, mtdRevenue });
   }
 
-  const grandTotalUnits = num(totalRowData[totalQtyCol]);
-  const grandTotalRevenue = parseIndianNum(totalRowData.slice(mtdStartCol));
-
-  // ── Parse "Overall Walkin" section ─────────────────────────────────────────
-  let walkinRow = -1;
-  for (let r = dataStartRow; r < rows.length; r++) {
-    if ((rows[r][0] ?? "").toLowerCase().includes("overall walkin")) {
-      walkinRow = r;
-      break;
-    }
-  }
-  if (walkinRow !== -1) {
-    const walkinSkuOrder = skuOrderFromRow(rows[walkinRow + 1] ?? [], 1);
-    for (let r = walkinRow + 2; r < rows.length; r++) {
-      const row = rows[r];
-      const name = (row[0] ?? "").trim();
-      if (!name || /^total/i.test(name)) break;
-      if (/overall|store location/i.test(name)) break;
-      const store = stores.find(
-        (s) => s.name === name || s.shortName === storeShortName(name)
-      );
-      if (store) {
-        store.walkin = {} as Partial<Record<SKU, number>>;
-        walkinSkuOrder.forEach((sku, i) => {
-          store.walkin![sku] = num(row[1 + i]);
-        });
-      }
-    }
-  }
-
-  // ── Parse "Store Location" weekly summary ──────────────────────────────────
-  const weekSummaries: WeekSummary[] = [];
-  let locRow = -1;
-  for (let r = 0; r < rows.length; r++) {
-    if ((rows[r][0] ?? "").toLowerCase().includes("store location")) {
-      locRow = r;
-      break;
-    }
-  }
-  if (locRow !== -1) {
-    for (let r = locRow + 1; r < rows.length; r++) {
-      const row = rows[r];
-      const label = (row[0] ?? "").trim();
-      if (!label || /^total/i.test(label)) break;
-      const units = num(row[1]);
-      const revenue = parseIndianNum(row.slice(2));
-      if (units > 0 || revenue > 0) {
-        weekSummaries.push({ label, units, revenue });
-      }
-    }
-  }
+  const grandTotalRevenue = stores.reduce((s, store) => s + store.mtdRevenue, 0);
 
   return {
     title,
     month,
     stores,
-    weekSummaries,
     grandTotalUnits,
     grandTotalRevenue,
     lastUpdated: new Date().toISOString(),
