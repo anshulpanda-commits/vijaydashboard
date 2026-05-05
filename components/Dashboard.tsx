@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Bar,
   BarChart,
@@ -124,18 +124,40 @@ function ConfigModal({
 
 // ─── Main Dashboard ───────────────────────────────────────────────────────────
 
-export default function Dashboard({ data }: { data: SalesData }) {
-  const { stores, weekSummaries, grandTotalUnits, grandTotalRevenue, month, title, lastUpdated } = data;
+export default function Dashboard() {
+  const [data, setData] = useState<SalesData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
 
   const [targets, setTargets] = useState<TargetConfig>({});
   const [showConfig, setShowConfig] = useState(false);
 
+  const loadData = useCallback(async (isRefresh = false) => {
+    if (isRefresh) setRefreshing(true);
+    else setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/sales");
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const json = await res.json();
+      if (json.error) throw new Error(json.error);
+      setData(json);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unknown error");
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, []);
+
   useEffect(() => {
+    loadData();
     try {
       const t = localStorage.getItem("vjd_targets");
       if (t) setTargets(JSON.parse(t));
     } catch {}
-  }, []);
+  }, [loadData]);
 
   function saveTargets(t: TargetConfig) {
     setTargets(t);
@@ -144,20 +166,24 @@ export default function Dashboard({ data }: { data: SalesData }) {
 
   // ── Derived data ────────────────────────────────────────────────────────────
 
-  // Best store by units
+  const stores = data?.stores ?? [];
+  const weekSummaries = data?.weekSummaries ?? [];
+  const grandTotalUnits = data?.grandTotalUnits ?? 0;
+  const grandTotalRevenue = data?.grandTotalRevenue ?? 0;
+  const month = data?.month ?? "";
+  const title = data?.title ?? "";
+  const lastUpdated = data?.lastUpdated ?? "";
+
   const bestStore = useMemo(
     () => [...stores].sort((a, b) => b.totalQty - a.totalQty)[0]?.shortName ?? "—",
     [stores]
   );
 
-  // Average revenue per unit
   const avgRevPerUnit = grandTotalUnits > 0
     ? Math.round(grandTotalRevenue / grandTotalUnits)
     : 0;
 
-  // Weekly units chart — one bar per week, stacked by SKU
   const weeklyUnitsData = useMemo(() => {
-    // Aggregate across all stores for each week
     const weekMap: Record<string, Record<SKU, number>> = {};
     for (const store of stores) {
       for (const week of store.weeks) {
@@ -170,14 +196,12 @@ export default function Dashboard({ data }: { data: SalesData }) {
       }
     }
     return Object.entries(weekMap).map(([label, skus]) => ({
-      // shorten label: "Week 1(1st-8th Mar)" → "Wk 1"
       label: label.replace(/week\s*(\d)/i, "Wk $1").replace(/\(.*\)/, "").trim(),
       fullLabel: label,
       ...skus,
     }));
   }, [stores]);
 
-  // MTD revenue by store (sorted descending)
   const revenueByStore = useMemo(
     () => [...stores]
       .filter((s) => s.mtdRevenue > 0)
@@ -186,7 +210,6 @@ export default function Dashboard({ data }: { data: SalesData }) {
     [stores]
   );
 
-  // MTD units by store with target progress
   const unitsByStore = useMemo(
     () => [...stores]
       .sort((a, b) => b.totalQty - a.totalQty)
@@ -198,7 +221,6 @@ export default function Dashboard({ data }: { data: SalesData }) {
     [stores, targets]
   );
 
-  // SKU mix donut — total units per SKU across all stores + weeks
   const skuMix = useMemo(() => {
     const totals = { brisk: 0, renpro: 0, stromgo: 0, halov2: 0, rengo: 0 };
     for (const store of stores) {
@@ -211,7 +233,6 @@ export default function Dashboard({ data }: { data: SalesData }) {
       .filter((e) => e.value > 0);
   }, [stores]);
 
-  // Walkin conversion table data
   const walkinData = useMemo(() => {
     const totals: Record<SKU, { walkin: number; sold: number }> = {
       brisk: { walkin: 0, sold: 0 },
@@ -242,6 +263,33 @@ export default function Dashboard({ data }: { data: SalesData }) {
 
   const hasWalkin = stores.some((s) => s.walkin);
 
+  // ── Loading / error states ───────────────────────────────────────────────────
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-slate-950 flex items-center justify-center">
+        <p className="text-slate-400 text-sm animate-pulse">Loading dashboard…</p>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="min-h-screen bg-slate-950 flex items-center justify-center p-6">
+        <div className="max-w-lg bg-slate-800 border border-red-500/30 rounded-2xl p-8 text-center">
+          <h1 className="text-white text-xl font-semibold mb-3">Could not load dashboard</h1>
+          <p className="text-slate-400 text-sm mb-5">{error}</p>
+          <button
+            onClick={() => loadData()}
+            className="bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl px-5 py-2.5 text-sm font-medium transition-colors"
+          >
+            Try again
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   // ── Render ───────────────────────────────────────────────────────────────────
 
   return (
@@ -265,15 +313,24 @@ export default function Dashboard({ data }: { data: SalesData }) {
               <span className="text-slate-300 font-medium">Vijay Sales</span>
             </div>
             <p className="text-xs text-slate-500 mt-0.5">
-              {month} · refreshed {new Date(lastUpdated).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}
+              {month} · refreshed {lastUpdated ? new Date(lastUpdated).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" }) : "—"}
             </p>
           </div>
-          <button
-            onClick={() => setShowConfig(true)}
-            className="text-xs bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg px-3 py-2 text-slate-300 transition-colors"
-          >
-            Set Targets
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => loadData(true)}
+              disabled={refreshing}
+              className="text-xs bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg px-3 py-2 text-slate-300 transition-colors disabled:opacity-50"
+            >
+              {refreshing ? "Refreshing…" : "↻ Refresh"}
+            </button>
+            <button
+              onClick={() => setShowConfig(true)}
+              className="text-xs bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg px-3 py-2 text-slate-300 transition-colors"
+            >
+              Set Targets
+            </button>
+          </div>
         </div>
       </header>
 
@@ -532,7 +589,7 @@ export default function Dashboard({ data }: { data: SalesData }) {
         )}
 
         <p className="text-center text-xs text-slate-600 pb-6">
-          Data auto-refreshes every hour · {title}
+          Data fetched live from Google Sheets · {title}
         </p>
       </main>
     </div>

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { fetchSalesData } from "@/lib/sheets";
 
-export const revalidate = 3600; // revalidate cache every hour
+export const revalidate = 0; // always fetch fresh data
 
 export async function GET() {
   try {

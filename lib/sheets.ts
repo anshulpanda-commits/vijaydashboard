@@ -224,7 +224,7 @@ function parseSalesData(rows: string[][]): SalesData {
 
 export async function fetchSalesData(): Promise<SalesData> {
   const url = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=csv&gid=${SHEET_GID}`;
-  const res = await fetch(url, { next: { revalidate: 3600 } });
+  const res = await fetch(url, { cache: "no-store" });
 
   if (!res.ok) {
     throw new Error(
