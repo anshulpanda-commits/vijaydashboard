@@ -2,7 +2,7 @@ import { SKU, SalesData, StoreData, WeekSummary, WeekUnits } from "./types";
 
 const SHEET_ID =
   process.env.SHEET_ID || "1QF7DvG8UISXlMpHeFapjpe-niy1akY-8IGzD6ehnHQA";
-const SHEET_GID = process.env.SHEET_GID || "0";
+const SHEET_GID = process.env.SHEET_GID || "1589162378";
 
 // ─── Sheet structure (confirmed from CSV export) ───────────────────────────────
 //
