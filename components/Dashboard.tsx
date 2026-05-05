@@ -122,6 +122,123 @@ function ConfigModal({
   );
 }
 
+// ─── Raw Data View ────────────────────────────────────────────────────────────
+
+function RawDataView({ stores }: { stores: StoreData[] }) {
+  if (stores.length === 0) {
+    return <p className="text-slate-500 text-sm text-center py-20">No data loaded yet.</p>;
+  }
+
+  const weeks = stores[0]?.weeks ?? [];
+
+  // Grand totals per week per SKU
+  const weekTotals = weeks.map((_, wi) => {
+    const t: Record<SKU, number> & { total: number } = { brisk: 0, renpro: 0, stromgo: 0, halov2: 0, rengo: 0, total: 0 };
+    for (const s of stores) {
+      const w = s.weeks[wi];
+      if (!w) continue;
+      for (const sku of SKUS) t[sku] += w[sku];
+      t.total += w.total;
+    }
+    return t;
+  });
+  const grandTotal = { units: stores.reduce((s, r) => s + r.totalQty, 0) };
+
+  return (
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6">
+      <div className="bg-slate-800 border border-slate-700 rounded-2xl p-5">
+        <div className="mb-4">
+          <h2 className="text-base font-semibold text-white">Raw Sheet Data</h2>
+          <p className="text-xs text-slate-400 mt-0.5">Exactly as received from Google Sheets — units per SKU per week per store</p>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-xs min-w-[700px] border-collapse">
+            <thead>
+              {/* Row 1: Week labels spanning 5 SKU columns each */}
+              <tr>
+                <th className="pb-1 pr-3 text-left text-slate-400 font-medium align-bottom" rowSpan={2}>Store</th>
+                {weeks.map((w) => (
+                  <th
+                    key={w.label}
+                    colSpan={SKUS.length + 1}
+                    className="pb-1 px-1 text-center text-slate-200 font-semibold border-b border-slate-600 whitespace-nowrap"
+                  >
+                    {w.label}
+                  </th>
+                ))}
+                <th className="pb-1 px-2 text-right text-slate-400 font-medium align-bottom" rowSpan={2}>Total Units</th>
+                <th className="pb-1 pl-2 text-right text-slate-400 font-medium align-bottom whitespace-nowrap" rowSpan={2}>MTD Rev</th>
+              </tr>
+              {/* Row 2: SKU sub-headers under each week */}
+              <tr>
+                {weeks.map((w) => (
+                  <>
+                    {SKUS.map((sku) => (
+                      <th key={`${w.label}-${sku}`} className="py-1.5 px-1.5 text-right font-medium whitespace-nowrap" style={{ color: SKU_COLORS[sku] }}>
+                        {SKU_LABELS[sku]}
+                      </th>
+                    ))}
+                    <th key={`${w.label}-total`} className="py-1.5 px-1.5 text-right text-slate-400 font-medium">Total</th>
+                  </>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-700/40">
+              {stores.map((s, si) => (
+                <tr key={s.name} className="hover:bg-slate-700/20">
+                  <td className="py-2 pr-3 text-slate-200 font-medium whitespace-nowrap">
+                    <span className="flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: STORE_PALETTE[si % STORE_PALETTE.length] }} />
+                      {s.shortName}
+                    </span>
+                  </td>
+                  {s.weeks.map((w) => (
+                    <>
+                      {SKUS.map((sku) => (
+                        <td key={`${w.label}-${sku}`} className={`py-2 px-1.5 text-right ${w[sku] > 0 ? "text-white" : "text-slate-600"}`}>
+                          {w[sku] || "—"}
+                        </td>
+                      ))}
+                      <td key={`${w.label}-total`} className={`py-2 px-1.5 text-right font-semibold ${w.total > 0 ? "text-indigo-400" : "text-slate-600"}`}>
+                        {w.total || "—"}
+                      </td>
+                    </>
+                  ))}
+                  <td className="py-2 px-2 text-right text-indigo-400 font-bold">{s.totalQty || "—"}</td>
+                  <td className="py-2 pl-2 text-right text-emerald-400 font-semibold whitespace-nowrap">
+                    {s.mtdRevenue > 0 ? "₹" + s.mtdRevenue.toLocaleString("en-IN") : "—"}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+            <tfoot>
+              <tr className="border-t-2 border-slate-600 font-semibold">
+                <td className="pt-3 pr-3 text-slate-400">Total</td>
+                {weekTotals.map((wt, wi) => (
+                  <>
+                    {SKUS.map((sku) => (
+                      <td key={`total-${wi}-${sku}`} className="pt-3 px-1.5 text-right text-slate-200">
+                        {wt[sku] || "—"}
+                      </td>
+                    ))}
+                    <td key={`total-${wi}-sum`} className="pt-3 px-1.5 text-right text-indigo-400">
+                      {wt.total || "—"}
+                    </td>
+                  </>
+                ))}
+                <td className="pt-3 px-2 text-right text-indigo-400">{grandTotal.units}</td>
+                <td className="pt-3 pl-2 text-right text-emerald-400">
+                  {"₹" + stores.reduce((s, r) => s + r.mtdRevenue, 0).toLocaleString("en-IN")}
+                </td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Main Dashboard ───────────────────────────────────────────────────────────
 
 export default function Dashboard() {
@@ -132,6 +249,7 @@ export default function Dashboard() {
 
   const [targets, setTargets] = useState<TargetConfig>({});
   const [showConfig, setShowConfig] = useState(false);
+  const [view, setView] = useState<"dashboard" | "raw">("dashboard");
 
   const loadData = useCallback(async (isRefresh = false) => {
     if (isRefresh) setRefreshing(true);
@@ -317,6 +435,21 @@ export default function Dashboard() {
             </p>
           </div>
           <div className="flex items-center gap-2">
+            {/* Tab switcher */}
+            <div className="flex bg-slate-800 border border-slate-700 rounded-lg p-0.5 gap-0.5">
+              <button
+                onClick={() => setView("dashboard")}
+                className={`text-xs px-3 py-1.5 rounded-md transition-colors ${view === "dashboard" ? "bg-indigo-600 text-white" : "text-slate-400 hover:text-slate-200"}`}
+              >
+                Dashboard
+              </button>
+              <button
+                onClick={() => setView("raw")}
+                className={`text-xs px-3 py-1.5 rounded-md transition-colors ${view === "raw" ? "bg-indigo-600 text-white" : "text-slate-400 hover:text-slate-200"}`}
+              >
+                Raw Data
+              </button>
+            </div>
             <button
               onClick={() => loadData(true)}
               disabled={refreshing}
@@ -324,17 +457,21 @@ export default function Dashboard() {
             >
               {refreshing ? "Refreshing…" : "↻ Refresh"}
             </button>
-            <button
-              onClick={() => setShowConfig(true)}
-              className="text-xs bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg px-3 py-2 text-slate-300 transition-colors"
-            >
-              Set Targets
-            </button>
+            {view === "dashboard" && (
+              <button
+                onClick={() => setShowConfig(true)}
+                className="text-xs bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg px-3 py-2 text-slate-300 transition-colors"
+              >
+                Set Targets
+              </button>
+            )}
           </div>
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6 space-y-6">
+      {view === "raw" && <RawDataView stores={stores} />}
+
+      <main className={`max-w-7xl mx-auto px-4 sm:px-6 py-6 space-y-6 ${view === "raw" ? "hidden" : ""}`}>
 
         {/* Summary cards */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
