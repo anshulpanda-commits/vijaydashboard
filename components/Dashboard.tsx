@@ -6,7 +6,9 @@ import {
   Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from "recharts";
 import { SalesData, StoreData, TargetConfig, columnColor, COLUMN_PALETTE } from "@/lib/types";
+import { MASTER_STORES } from "@/lib/vijayReportedData";
 import MoMSection from "./MoMSection";
+import VijayReportedSection from "./VijayReportedSection";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -25,9 +27,11 @@ const STORE_PALETTE = [
 // ─── Tab definitions ──────────────────────────────────────────────────────────
 
 const TABS = [
-  { id: "overview",  label: "MTD Overview",    icon: "📊" },
-  { id: "monthly",   label: "Monthly Trends",   icon: "📈" },
-  { id: "live",      label: "Live Sheet Data",  icon: "🗂️" },
+  { id: "overview",  label: "MTD Overview",      icon: "📊" },
+  { id: "monthly",   label: "Monthly Trends",     icon: "📈" },
+  { id: "vijay",     label: "Vijay Reported",     icon: "📋" },
+  { id: "live",      label: "Live Sheet Data",    icon: "🗂️" },
+  { id: "outlets",   label: "Outlets & Promoters", icon: "🏪" },
 ] as const;
 type TabId = typeof TABS[number]["id"];
 
@@ -225,6 +229,7 @@ export default function Dashboard() {
   const [showConfig, setShowConfig] = useState(false);
   const [isDark, setIsDark]         = useState(true);
   const [activeTab, setActiveTab]   = useState<TabId>("overview");
+  const [promoters, setPromoters]   = useState<Array<{ name: string; store: string; key: string }>>([]);
 
   const loadData = useCallback(async (isRefresh = false) => {
     if (isRefresh) setRefreshing(true); else setLoading(true);
@@ -243,8 +248,9 @@ export default function Dashboard() {
   useEffect(() => {
     loadData();
     try {
-      const t = localStorage.getItem("vjd_targets"); if (t) setTargets(JSON.parse(t));
-      const th = localStorage.getItem("vjd_theme");  if (th === "light") setIsDark(false);
+      const t = localStorage.getItem("vjd_targets");   if (t)  setTargets(JSON.parse(t));
+      const th = localStorage.getItem("vjd_theme");    if (th === "light") setIsDark(false);
+      const pr = localStorage.getItem("vjd_promoters"); if (pr) setPromoters(JSON.parse(pr));
     } catch {}
   }, [loadData]);
 
@@ -549,6 +555,9 @@ export default function Dashboard() {
           />
         )}
 
+        {/* ── Tab: Vijay Reported ──────────────────────────────────────────── */}
+        {activeTab === "vijay" && <VijayReportedSection />}
+
         {/* ── Tab: Live Sheet Data ──────────────────────────────────────────── */}
         {activeTab === "live" && (
           <Section
@@ -565,6 +574,132 @@ export default function Dashboard() {
               />
             </div>
           </Section>
+        )}
+
+        {/* ── Tab: Outlets & Promoters ─────────────────────────────────────── */}
+        {activeTab === "outlets" && (
+          <div className="space-y-6">
+            {/* Master outlet list */}
+            <div className="bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-2xl overflow-hidden">
+              <div className="px-5 pt-5 pb-3">
+                <h2 className="text-base font-semibold text-gray-900 dark:text-white">Master Outlet List</h2>
+                <p className="text-xs text-gray-500 dark:text-slate-400 mt-0.5">{MASTER_STORES.length} outlets</p>
+              </div>
+              <div className="px-5 pb-5 overflow-x-auto">
+                <table className="w-full text-sm border-collapse">
+                  <thead>
+                    <tr className="border-b border-gray-200 dark:border-slate-600">
+                      <th className="pb-2 pr-6 text-left text-xs text-gray-500 dark:text-slate-400 font-medium uppercase tracking-wider">#</th>
+                      <th className="pb-2 pr-6 text-left text-xs text-gray-500 dark:text-slate-400 font-medium uppercase tracking-wider">Code</th>
+                      <th className="pb-2 text-left text-xs text-gray-500 dark:text-slate-400 font-medium uppercase tracking-wider">Store Name</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100 dark:divide-slate-700/40">
+                    {MASTER_STORES.map((s, i) => (
+                      <tr key={s.code} className="hover:bg-gray-50 dark:hover:bg-slate-700/20">
+                        <td className="py-2 pr-6 text-gray-400 dark:text-slate-600 text-xs">{i + 1}</td>
+                        <td className="py-2 pr-6 font-bold text-indigo-600 dark:text-indigo-400 font-mono">{s.code}</td>
+                        <td className="py-2 text-gray-800 dark:text-slate-200">{s.name}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* Promoter list */}
+            <div className="bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-2xl overflow-hidden">
+              <div className="px-5 pt-5 pb-3 flex items-center justify-between">
+                <div>
+                  <h2 className="text-base font-semibold text-gray-900 dark:text-white">Promoters</h2>
+                  <p className="text-xs text-gray-500 dark:text-slate-400 mt-0.5">Enter promoter names, assigned store, and their incentive key</p>
+                </div>
+                <button
+                  onClick={() => {
+                    const updated = [...promoters, { name: "", store: "", key: "" }];
+                    setPromoters(updated);
+                    localStorage.setItem("vjd_promoters", JSON.stringify(updated));
+                  }}
+                  className="text-xs bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg px-3 py-2 font-medium transition-colors">
+                  + Add Row
+                </button>
+              </div>
+              <div className="px-5 pb-5 overflow-x-auto">
+                {promoters.length === 0 ? (
+                  <p className="text-sm text-gray-400 dark:text-slate-500 text-center py-8">No promoters added yet. Click "+ Add Row" to start.</p>
+                ) : (
+                  <table className="w-full text-sm border-collapse">
+                    <thead>
+                      <tr className="border-b border-gray-200 dark:border-slate-600">
+                        <th className="pb-2 pr-4 text-left text-xs text-gray-500 dark:text-slate-400 font-medium uppercase tracking-wider">#</th>
+                        <th className="pb-2 pr-4 text-left text-xs text-gray-500 dark:text-slate-400 font-medium uppercase tracking-wider">Promoter Name</th>
+                        <th className="pb-2 pr-4 text-left text-xs text-gray-500 dark:text-slate-400 font-medium uppercase tracking-wider">Store</th>
+                        <th className="pb-2 pr-4 text-left text-xs text-gray-500 dark:text-slate-400 font-medium uppercase tracking-wider">Key / Code</th>
+                        <th className="pb-2" />
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100 dark:divide-slate-700/40">
+                      {promoters.map((p, i) => (
+                        <tr key={i} className="group">
+                          <td className="py-2 pr-4 text-gray-400 dark:text-slate-600 text-xs">{i + 1}</td>
+                          <td className="py-2 pr-4">
+                            <input
+                              value={p.name}
+                              onChange={e => {
+                                const updated = promoters.map((r, ri) => ri === i ? { ...r, name: e.target.value } : r);
+                                setPromoters(updated);
+                                localStorage.setItem("vjd_promoters", JSON.stringify(updated));
+                              }}
+                              placeholder="Promoter name"
+                              className="w-full bg-transparent border-b border-gray-200 dark:border-slate-600 focus:border-indigo-500 focus:outline-none text-gray-900 dark:text-white py-0.5 text-sm"
+                            />
+                          </td>
+                          <td className="py-2 pr-4">
+                            <select
+                              value={p.store}
+                              onChange={e => {
+                                const updated = promoters.map((r, ri) => ri === i ? { ...r, store: e.target.value } : r);
+                                setPromoters(updated);
+                                localStorage.setItem("vjd_promoters", JSON.stringify(updated));
+                              }}
+                              className="bg-transparent border-b border-gray-200 dark:border-slate-600 focus:border-indigo-500 focus:outline-none text-gray-900 dark:text-white py-0.5 text-sm w-full">
+                              <option value="">— select —</option>
+                              {MASTER_STORES.map(s => (
+                                <option key={s.code} value={s.code}>{s.code} · {s.name}</option>
+                              ))}
+                            </select>
+                          </td>
+                          <td className="py-2 pr-4">
+                            <input
+                              value={p.key}
+                              onChange={e => {
+                                const updated = promoters.map((r, ri) => ri === i ? { ...r, key: e.target.value } : r);
+                                setPromoters(updated);
+                                localStorage.setItem("vjd_promoters", JSON.stringify(updated));
+                              }}
+                              placeholder="e.g. P001"
+                              className="w-full bg-transparent border-b border-gray-200 dark:border-slate-600 focus:border-indigo-500 focus:outline-none text-gray-900 dark:text-white py-0.5 text-sm font-mono"
+                            />
+                          </td>
+                          <td className="py-2 text-right">
+                            <button
+                              onClick={() => {
+                                const updated = promoters.filter((_, ri) => ri !== i);
+                                setPromoters(updated);
+                                localStorage.setItem("vjd_promoters", JSON.stringify(updated));
+                              }}
+                              className="text-gray-300 dark:text-slate-600 hover:text-red-500 dark:hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity text-xs">
+                              ✕
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            </div>
+          </div>
         )}
 
         <p className="text-center text-xs text-gray-400 dark:text-slate-600 pb-6">

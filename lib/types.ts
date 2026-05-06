@@ -36,15 +36,24 @@ export const COLUMN_PALETTE = [
 
 // Store code lookup — keyword → 3-letter code
 const STORE_CODE_KEYWORDS: Array<[string, string]> = [
-  ["janakpuri",   "DJK"],
-  ["rajouri",     "DRG"],
-  ["indirapuram", "UIP"],
-  ["faridabad",   "HFR"],
-  ["rohini",      "DRH"],
-  ["hauz",        "DHK"],
-  ["gaur",        "UGC"],
-  ["lajpat",      "DLJ"],
-  ["noida",       "UND"],
+  ["janakpuri",    "DJK"],
+  ["rajouri",      "DRG"],
+  ["indirapuram",  "UIP"],
+  ["mewala",       "HMM"],
+  ["faridabad",    "HMM"],
+  ["rohini",       "DRH"],
+  ["hauz",         "DHK"],
+  ["gaur",         "UGC"],
+  ["lajpat",       "DLJ"],
+  ["noida",        "UND"],
+  ["gurgaon",      "HGG"],
+  ["vikas marg",   "DVM"],
+  ["model town",   "DMT"],
+  ["nawada",       "DNW"],
+  ["patel nagar",  "DPN"],
+  ["budh vihar",   "DBH"],
+  ["saket",        "DSK"],
+  ["uttam nagar",  "DUN"],
 ];
 
 export function getStoreCode(name: string): string {
