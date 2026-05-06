@@ -8,6 +8,7 @@ export interface DayData {
 export interface StoreData {
   name: string;
   shortName: string;
+  storeCode: string;  // 3-letter code e.g. "DJK"
   days: DayData[];
   totalQty: number;   // MTD units — col B in the sheet
   mtdRevenue: number; // latest non-zero MTD revenue across all days
@@ -32,6 +33,27 @@ export const COLUMN_PALETTE = [
   "#60A5FA", "#A78BFA", "#34D399", "#FBBF24", "#F87171",
   "#38BDF8", "#FB923C", "#A3E635", "#E879F9", "#94A3B8", "#F472B6",
 ];
+
+// Store code lookup — keyword → 3-letter code
+const STORE_CODE_KEYWORDS: Array<[string, string]> = [
+  ["janakpuri",   "DJK"],
+  ["rajouri",     "DRG"],
+  ["indirapuram", "UIP"],
+  ["faridabad",   "HFR"],
+  ["rohini",      "DRH"],
+  ["hauz",        "DHK"],
+  ["gaur",        "UGC"],
+  ["lajpat",      "DLJ"],
+  ["noida",       "UND"],
+];
+
+export function getStoreCode(name: string): string {
+  const lower = name.toLowerCase();
+  for (const [keyword, code] of STORE_CODE_KEYWORDS) {
+    if (lower.includes(keyword)) return code;
+  }
+  return name.slice(0, 3).toUpperCase();
+}
 
 export function columnColor(header: string, index: number): string {
   const KNOWN: Record<string, string> = {

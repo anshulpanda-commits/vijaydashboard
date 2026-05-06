@@ -1,4 +1,4 @@
-import { SalesData, StoreData, DayData } from "./types";
+import { SalesData, StoreData, DayData, getStoreCode } from "./types";
 
 const SHEET_ID = process.env.SHEET_ID || "1QF7DvG8UISXlMpHeFapjpe-niy1akY-8IGzD6ehnHQA";
 const SHEET_GID = process.env.SHEET_GID || "1589162378";
@@ -123,7 +123,7 @@ function parseSalesData(rows: string[][]): SalesData {
 
     const mtdRevenue = [...days].reverse().find(d => d.mtdRevenue > 0)?.mtdRevenue ?? 0;
 
-    stores.push({ name, shortName: storeShortName(name), days, totalQty, mtdRevenue });
+    stores.push({ name, shortName: storeShortName(name), storeCode: getStoreCode(name), days, totalQty, mtdRevenue });
   }
 
   const grandTotalRevenue = stores.reduce((s, st) => s + st.mtdRevenue, 0);

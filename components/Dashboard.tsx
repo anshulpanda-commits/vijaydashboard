@@ -6,6 +6,7 @@ import {
   Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from "recharts";
 import { SalesData, StoreData, TargetConfig, columnColor, COLUMN_PALETTE } from "@/lib/types";
+import MoMSection from "./MoMSection";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -61,7 +62,10 @@ function ConfigModal({ targets, stores, onSave, onClose }: {
         <div className="space-y-3 mb-5">
           {stores.map((s) => (
             <div key={s.name} className="flex items-center gap-3">
-              <label className="text-sm text-gray-700 dark:text-slate-300 flex-1 truncate">{s.shortName}</label>
+              <label className="text-sm text-gray-700 dark:text-slate-300 flex-1 truncate">
+                <span className="font-semibold">{s.storeCode}</span>
+                <span className="text-gray-400 dark:text-slate-500 ml-1 text-xs">({s.shortName})</span>
+              </label>
               <input
                 type="number"
                 value={local[s.name] ?? 30}
@@ -158,7 +162,10 @@ function RawDataTable({ stores, columnHeaders, grandTotalUnits, grandTotalRevenu
                 <span className="flex items-center gap-1.5">
                   <span className="w-2 h-2 rounded-full flex-shrink-0"
                     style={{ background: STORE_PALETTE[si % STORE_PALETTE.length] }} />
-                  <span className="text-gray-800 dark:text-slate-200 font-medium">{s.shortName}</span>
+                  <span>
+                    <span className="text-gray-800 dark:text-slate-200 font-semibold">{s.storeCode}</span>
+                    <span className="text-gray-400 dark:text-slate-500 text-[10px] ml-1">({s.shortName})</span>
+                  </span>
                 </span>
               </td>
               {s.days.map((d) => (
@@ -266,10 +273,16 @@ export default function Dashboard() {
   const title      = data?.title      ?? "";
   const lastUpdated = data?.lastUpdated ?? "";
 
-  const bestStore = useMemo(
-    () => [...stores].sort((a, b) => b.totalQty - a.totalQty)[0]?.shortName ?? "—",
+  const bestStoreObj = useMemo(
+    () => [...stores].sort((a, b) => b.totalQty - a.totalQty)[0] ?? null,
     [stores]
   );
+
+  const codeToName = useMemo(() => {
+    const m: Record<string, string> = {};
+    for (const s of stores) m[s.storeCode] = s.shortName;
+    return m;
+  }, [stores]);
 
   const avgRevPerUnit = grandTotalUnits > 0 ? Math.round(grandTotalRevenue / grandTotalUnits) : 0;
 
@@ -295,14 +308,14 @@ export default function Dashboard() {
   const revenueByStore = useMemo(
     () => [...stores].filter(s => s.mtdRevenue > 0)
       .sort((a, b) => b.mtdRevenue - a.mtdRevenue)
-      .map(s => ({ store: s.shortName, revenue: s.mtdRevenue })),
+      .map(s => ({ store: s.storeCode, storeName: s.shortName, revenue: s.mtdRevenue })),
     [stores]
   );
 
   // Units by store with target
   const unitsByStore = useMemo(
     () => [...stores].sort((a, b) => b.totalQty - a.totalQty)
-      .map(s => ({ store: s.shortName, units: s.totalQty, target: targets[s.name] ?? 30 })),
+      .map(s => ({ store: s.storeCode, storeName: s.shortName, units: s.totalQty, target: targets[s.name] ?? 30 })),
     [stores, targets]
   );
 
@@ -318,9 +331,10 @@ export default function Dashboard() {
   }, [stores, columnHeaders]);
 
   // Chart theme
-  const chartGrid   = isDark ? "#334155" : "#E2E8F0";
-  const chartTick   = isDark ? "#94A3B8" : "#64748B";
-  const chartCursor = isDark ? "#1E293B" : "#F1F5F9";
+  const chartGrid    = isDark ? "#334155" : "#E2E8F0";
+  const chartTick    = isDark ? "#94A3B8" : "#64748B";
+  const chartTickDim = isDark ? "#475569" : "#94A3B8";
+  const chartCursor  = isDark ? "#1E293B" : "#F1F5F9";
   const tooltipStyle = isDark
     ? { backgroundColor: "#1E293B", border: "1px solid #334155", borderRadius: 8, color: "#F1F5F9", fontSize: 12 }
     : { backgroundColor: "#FFFFFF", border: "1px solid #E2E8F0", borderRadius: 8, color: "#1E293B", fontSize: 12 };
@@ -390,7 +404,7 @@ export default function Dashboard() {
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           <Card label="MTD Units" value={grandTotalUnits.toString()} sub={`across ${stores.filter(s => s.totalQty > 0).length} stores`} color="text-indigo-600 dark:text-indigo-400" />
           <Card label="MTD Revenue" value={fmtRev(grandTotalRevenue)} sub={grandTotalRevenue > 0 ? fmtRevFull(grandTotalRevenue) : "not yet entered"} color="text-emerald-600 dark:text-emerald-400" />
-          <Card label="Top Store" value={bestStore} sub="by units sold" color="text-amber-600 dark:text-amber-400" />
+          <Card label="Top Store" value={bestStoreObj?.storeCode ?? "—"} sub={bestStoreObj?.shortName ?? "by units sold"} color="text-amber-600 dark:text-amber-400" />
           <Card label="Avg Rev / Unit" value={avgRevPerUnit > 0 ? fmtRev(avgRevPerUnit) : "—"} sub="blended across products" />
         </div>
 
@@ -428,8 +442,23 @@ export default function Dashboard() {
                   <BarChart data={revenueByStore} layout="vertical" margin={{ top: 0, right: 16, left: 0, bottom: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke={chartGrid} horizontal={false} />
                     <XAxis type="number" tick={{ fill: chartTick, fontSize: 10 }} axisLine={false} tickLine={false} tickFormatter={fmtRev} />
-                    <YAxis type="category" dataKey="store" width={76} tick={{ fill: chartTick, fontSize: 10 }} axisLine={false} tickLine={false} />
-                    <Tooltip contentStyle={tooltipStyle} formatter={(v: number) => [fmtRevFull(v), "Revenue"]} cursor={{ fill: chartCursor }} />
+                    <YAxis type="category" dataKey="store" width={96} axisLine={false} tickLine={false}
+                      tick={(props) => {
+                        const { x, y, payload } = props;
+                        const code = payload.value as string;
+                        const name = codeToName[code] ?? "";
+                        return (
+                          <g transform={`translate(${x},${y})`}>
+                            <text textAnchor="end" fill={chartTick} fontSize={10} fontWeight={600} dy={-3}>{code}</text>
+                            <text textAnchor="end" fill={chartTickDim} fontSize={8} dy={9}>{name}</text>
+                          </g>
+                        );
+                      }}
+                    />
+                    <Tooltip contentStyle={tooltipStyle}
+                      formatter={(v: number) => [fmtRevFull(v), "Revenue"]}
+                      labelFormatter={(label: string) => `${label} · ${codeToName[label] ?? ""}`}
+                      cursor={{ fill: chartCursor }} />
                     <Bar dataKey="revenue" radius={[0, 4, 4, 0]}>
                       {revenueByStore.map((_, i) => <Cell key={i} fill={STORE_PALETTE[i % STORE_PALETTE.length]} />)}
                     </Bar>
@@ -446,7 +475,10 @@ export default function Dashboard() {
                 return (
                   <div key={row.store}>
                     <div className="flex justify-between text-xs mb-1">
-                      <span className="text-gray-800 dark:text-slate-200 font-medium">{row.store}</span>
+                      <span>
+                        <span className="text-gray-800 dark:text-slate-200 font-semibold">{row.store}</span>
+                        <span className="text-gray-400 dark:text-slate-500 ml-1">({row.storeName})</span>
+                      </span>
                       <span className="text-gray-500 dark:text-slate-400">{row.units} / {row.target}</span>
                     </div>
                     <div className="h-2 bg-gray-200 dark:bg-slate-700 rounded-full overflow-hidden">
@@ -489,6 +521,16 @@ export default function Dashboard() {
             </div>
           </div>
         </Section>
+
+        {/* ── Month-on-Month & SKU sections ─────────────────────────────────── */}
+        <MoMSection
+          liveStores={stores}
+          liveColumnHeaders={columnHeaders}
+          liveMonth={month}
+          liveTotalUnits={grandTotalUnits}
+          liveTotalRevenue={grandTotalRevenue}
+          isDark={isDark}
+        />
 
         {/* ── Parser / Raw Data Table ─────────────────────────────────────────
             Always visible. Columns are driven entirely by the Google Sheet headers.
