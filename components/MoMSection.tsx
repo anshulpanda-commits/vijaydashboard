@@ -7,7 +7,7 @@ import {
 } from "recharts";
 import { StoreData, columnColor } from "@/lib/types";
 import {
-  HISTORICAL_MONTHS, HISTORICAL_SKUS, CANONICAL_STORE_CODES,
+  HISTORICAL_MONTHS, HISTORICAL_SKUS,
   type HistoricalStoreRow,
 } from "@/lib/historicalData";
 
@@ -16,7 +16,7 @@ import {
 function fmtL(n: number): string {
   if (n <= 0) return "—";
   if (n >= 1_00_000) return `₹${(n / 1_00_000).toFixed(1)}L`;
-  if (n >= 1_000)   return `₹${(n / 1_000).toFixed(1)}K`;
+  if (n >= 1_000)    return `₹${(n / 1_000).toFixed(1)}K`;
   return `₹${n}`;
 }
 function fmtLFull(n: number): string { return "₹" + n.toLocaleString("en-IN"); }
@@ -71,9 +71,11 @@ interface MonthEntry {
   storeMap: Record<string, StoreSlice>;
 }
 
+// "Revenue" → mtdRevenue, "All" → totalUnits, specific SKU → units[sku]
 function getValue(slice: StoreSlice | undefined, filter: string): number {
   if (!slice) return 0;
   if (filter === "Revenue") return slice.mtdRevenue;
+  if (filter === "All")     return slice.totalUnits;
   return slice.units[filter] ?? 0;
 }
 
@@ -88,15 +90,21 @@ interface Props {
   isDark: boolean;
 }
 
+// Fixed canonical SKUs — MTD Revenue is NOT a SKU
+const SKUS = Array.from(HISTORICAL_SKUS);
+
 export default function MoMSection({
   liveStores, liveColumnHeaders, liveMonth,
   liveTotalUnits, liveTotalRevenue, isDark,
 }: Props) {
 
-  const [heatFilter, setHeatFilter] = useState("Revenue");
+  const [viewMode, setViewMode] = useState<"Revenue" | "Units">("Revenue");
+  const [skuFilter, setSkuFilter] = useState("All");  // only active when viewMode=Units
 
-  // Build May store data by aggregating daily metrics from live API
-  const mayStoreMap = useMemo<Record<string, StoreSlice>>(() => {
+  const effectiveFilter = viewMode === "Revenue" ? "Revenue" : skuFilter;
+
+  // Build current-month store data by aggregating daily metrics from live API
+  const liveStoreMap = useMemo<Record<string, StoreSlice>>(() => {
     const map: Record<string, StoreSlice> = {};
     for (const s of liveStores) {
       const units: Record<string, number> = {};
@@ -113,7 +121,7 @@ export default function MoMSection({
     return map;
   }, [liveStores]);
 
-  // Combined months: historical + live
+  // Combined months: historical (Mar, Apr) + live (May MTD)
   const months = useMemo<MonthEntry[]>(() => {
     const hist = HISTORICAL_MONTHS.map(hm => ({
       label: hm.shortMonth,
@@ -130,37 +138,28 @@ export default function MoMSection({
         month: liveMonth ? `${liveMonth} — month to date` : "Current month (MTD)",
         totalRevenue: liveTotalRevenue,
         totalUnits: liveTotalUnits,
-        storeMap: mayStoreMap,
+        storeMap: liveStoreMap,
       },
     ];
-  }, [liveMonth, liveTotalRevenue, liveTotalUnits, mayStoreMap]);
+  }, [liveMonth, liveTotalRevenue, liveTotalUnits, liveStoreMap]);
 
-  // All SKUs (union of historical + live)
-  const allSkus = useMemo(() => {
-    const seen = new Set<string>(HISTORICAL_SKUS);
-    for (const h of liveColumnHeaders) seen.add(h);
-    return Array.from(seen);
-  }, [liveColumnHeaders]);
-
-  // Filter options shown above heatmap
-  const filterOptions = ["Revenue", ...allSkus];
-
-  // Canonical store rows for heatmap (April has all 9 active stores)
+  // Canonical store rows (April has all 9 active stores)
   const canonicalStores = HISTORICAL_MONTHS[1].stores;
 
-  // Per-month column max (for heatmap intensity)
+  // Per-month column max for heatmap intensity scaling
   const colMaxes = useMemo(() => months.map(m => {
-    const vals = canonicalStores.map(s => getValue(m.storeMap[s.storeCode], heatFilter));
+    const vals = canonicalStores.map(s => getValue(m.storeMap[s.storeCode], effectiveFilter));
     return Math.max(...vals, 1);
-  }), [months, heatFilter, canonicalStores]);
+  }), [months, effectiveFilter, canonicalStores]);
 
   // Monthly totals for the Total row
   const monthTotals = useMemo(() => months.map(m => {
-    if (heatFilter === "Revenue") return m.totalRevenue;
-    return canonicalStores.reduce((sum, s) => sum + (m.storeMap[s.storeCode]?.units[heatFilter] ?? 0), 0);
-  }), [months, heatFilter, canonicalStores]);
+    if (effectiveFilter === "Revenue") return m.totalRevenue;
+    if (effectiveFilter === "All")     return m.totalUnits;
+    return canonicalStores.reduce((sum, s) => sum + (m.storeMap[s.storeCode]?.units[effectiveFilter] ?? 0), 0);
+  }), [months, effectiveFilter, canonicalStores]);
 
-  const isRev = heatFilter === "Revenue";
+  const isRev = viewMode === "Revenue";
 
   // Chart theme
   const chartGrid = isDark ? "#334155" : "#E2E8F0";
@@ -169,38 +168,61 @@ export default function MoMSection({
     ? { backgroundColor: "#1E293B", border: "1px solid #334155", borderRadius: 8, color: "#F1F5F9", fontSize: 12 }
     : { backgroundColor: "#FFFFFF", border: "1px solid #E2E8F0", borderRadius: 8, color: "#1E293B", fontSize: 12 };
 
-  // SKU chart data: one row per month, one key per SKU
+  // SKU chart data: one row per month, one key per (canonical) SKU
   const skuChartData = useMemo(() => months.map(m => {
     const row: Record<string, number | string> = { month: m.label };
-    for (const sku of allSkus) {
+    for (const sku of SKUS) {
       row[sku] = canonicalStores.reduce((sum, s) => sum + (m.storeMap[s.storeCode]?.units[sku] ?? 0), 0);
     }
     return row;
-  }), [months, allSkus, canonicalStores]);
+  }), [months, canonicalStores]);
 
-  // SKU summary table data
-  const skuSummary = useMemo(() => allSkus.map(sku => {
+  // SKU summary table
+  const skuSummary = useMemo(() => SKUS.map(sku => {
     const vals = months.map(m =>
       canonicalStores.reduce((sum, s) => sum + (m.storeMap[s.storeCode]?.units[sku] ?? 0), 0)
     );
     return { sku, vals };
-  }), [months, allSkus, canonicalStores]);
+  }), [months, canonicalStores]);
 
   if (liveStores.length === 0) return null;
 
   return (
-    <>
-      {/* ── MoM Revenue / Units Heatmap ─────────────────────────────────────── */}
+    <div className="space-y-6">
+      {/* ── MoM Heatmap ────────────────────────────────────────────────────────── */}
       <Section
         title="Month-on-Month Heatmap"
-        sub="Revenue and unit trends across stores · select a SKU to drill down into units sold"
+        sub={isRev ? "MTD revenue by store — Mar → Apr → current month" : "Units sold by store · select a SKU to drill down"}
       >
         {/* Filter bar */}
-        <div className="flex flex-wrap items-center gap-2 mb-4">
-          <span className="text-xs text-gray-500 dark:text-slate-400 font-medium uppercase tracking-wider">View</span>
-          {filterOptions.map(f => (
-            <FilterPill key={f} label={f} active={heatFilter === f} onClick={() => setHeatFilter(f)} />
-          ))}
+        <div className="flex flex-wrap items-center gap-4 mb-5">
+          {/* Revenue / Units toggle */}
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-gray-500 dark:text-slate-400 font-medium uppercase tracking-wider">View</span>
+            <div className="flex bg-gray-100 dark:bg-slate-700 rounded-lg p-0.5">
+              {(["Revenue", "Units"] as const).map(v => (
+                <button key={v} onClick={() => setViewMode(v)}
+                  className={`px-4 py-1.5 rounded-md text-xs font-medium transition-all ${
+                    viewMode === v
+                      ? "bg-white dark:bg-slate-600 text-gray-900 dark:text-white shadow-sm"
+                      : "text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:hover:text-slate-200"
+                  }`}>
+                  {v}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* SKU filter — only shown when Units mode is active */}
+          {viewMode === "Units" && (
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-xs text-gray-500 dark:text-slate-400 font-medium uppercase tracking-wider">SKU</span>
+              <FilterPill label="All" active={skuFilter === "All"} onClick={() => setSkuFilter("All")} />
+              {SKUS.map(sku => (
+                <FilterPill key={sku} label={sku} active={skuFilter === sku} onClick={() => setSkuFilter(sku)} />
+              ))}
+            </div>
+          )}
         </div>
 
         <div className="overflow-x-auto">
@@ -211,15 +233,15 @@ export default function MoMSection({
                 {months.map((m, mi) => (
                   <th key={m.label} className="pb-2 px-3 text-right font-semibold text-gray-800 dark:text-slate-200 whitespace-nowrap">
                     {m.label}
-                    {mi > 0 && (
-                      <span className="ml-2 text-[10px] font-normal text-gray-400 dark:text-slate-500">
-                        {(() => {
-                          const g = pct(monthTotals[mi], monthTotals[mi - 1]);
-                          if (g === null) return "";
-                          return g >= 0 ? `▲ ${g}%` : `▼ ${Math.abs(g)}%`;
-                        })()}
-                      </span>
-                    )}
+                    {mi > 0 && (() => {
+                      const g = pct(monthTotals[mi], monthTotals[mi - 1]);
+                      if (g === null) return null;
+                      return (
+                        <span className={`ml-2 text-[10px] font-normal ${g >= 0 ? "text-emerald-500" : "text-red-400"}`}>
+                          {g >= 0 ? "▲" : "▼"} {Math.abs(g)}%
+                        </span>
+                      );
+                    })()}
                   </th>
                 ))}
               </tr>
@@ -230,8 +252,7 @@ export default function MoMSection({
                 <td className="py-2 pr-4 font-semibold text-gray-700 dark:text-slate-200">Total</td>
                 {months.map((m, mi) => {
                   const val = monthTotals[mi];
-                  const prevVal = mi > 0 ? monthTotals[mi - 1] : null;
-                  const g = prevVal !== null ? pct(val, prevVal) : null;
+                  const g = mi > 0 ? pct(val, monthTotals[mi - 1]) : null;
                   return (
                     <td key={m.label} className="py-2 px-3 text-right">
                       <div className="font-bold text-gray-900 dark:text-white">
@@ -252,13 +273,12 @@ export default function MoMSection({
                 <tr key={cs.storeCode} className="hover:bg-gray-50 dark:hover:bg-slate-700/20">
                   <td className="py-2 pr-4 whitespace-nowrap">
                     <span className="font-semibold text-gray-800 dark:text-slate-200">{cs.storeCode}</span>
-                    <span className="text-gray-400 dark:text-slate-500 ml-1">({cs.storeName})</span>
+                    <span className="text-gray-400 dark:text-slate-500 ml-1 text-[10px]">({cs.storeName})</span>
                   </td>
                   {months.map((m, mi) => {
                     const slice = m.storeMap[cs.storeCode];
-                    const val = getValue(slice, heatFilter);
-                    const prevSlice = mi > 0 ? months[mi - 1].storeMap[cs.storeCode] : null;
-                    const prevVal = prevSlice !== null ? getValue(prevSlice ?? undefined, heatFilter) : null;
+                    const val = getValue(slice, effectiveFilter);
+                    const prevVal = mi > 0 ? getValue(months[mi - 1].storeMap[cs.storeCode], effectiveFilter) : null;
                     const g = prevVal !== null ? pct(val, prevVal) : null;
                     const bg = heatBg(val, colMaxes[mi], isDark, isRev ? "rev" : "units");
                     return (
@@ -278,13 +298,13 @@ export default function MoMSection({
               ))}
             </tbody>
 
-            {/* Footer: full revenue row when in units mode */}
+            {/* Always show revenue reference in units mode */}
             {!isRev && (
               <tfoot>
-                <tr className="border-t border-gray-200 dark:border-slate-600 text-gray-400 dark:text-slate-500">
-                  <td className="pt-2 pr-4 text-[10px] italic">MTD Revenue</td>
+                <tr className="border-t border-gray-200 dark:border-slate-600">
+                  <td className="pt-2 pr-4 text-[10px] italic text-gray-400 dark:text-slate-500">MTD Revenue</td>
                   {months.map(m => (
-                    <td key={m.label} className="pt-2 px-3 text-right text-[10px]">
+                    <td key={m.label} className="pt-2 px-3 text-right text-[10px] text-gray-400 dark:text-slate-500">
                       {fmtL(m.totalRevenue)}
                     </td>
                   ))}
@@ -294,7 +314,6 @@ export default function MoMSection({
           </table>
         </div>
 
-        {/* Tooltip for full revenue on hover-over cells shows inline */}
         {isRev && (
           <p className="mt-3 text-[10px] text-gray-400 dark:text-slate-600">
             Full values — Mar: {fmtLFull(HISTORICAL_MONTHS[0].totalRevenue)} · Apr: {fmtLFull(HISTORICAL_MONTHS[1].totalRevenue)}
@@ -303,7 +322,7 @@ export default function MoMSection({
         )}
       </Section>
 
-      {/* ── Monthly Units by SKU ─────────────────────────────────────────────── */}
+      {/* ── Monthly Units by SKU ──────────────────────────────────────────────── */}
       <Section
         title="Monthly Units by SKU"
         sub="Total units sold per product across all stores — month by month"
@@ -315,7 +334,7 @@ export default function MoMSection({
             <YAxis tick={{ fill: chartTick, fontSize: 11 }} axisLine={false} tickLine={false} allowDecimals={false} />
             <Tooltip contentStyle={tooltipStyle} cursor={{ fill: isDark ? "#1E293B" : "#F1F5F9" }} />
             <Legend wrapperStyle={{ fontSize: 12, color: chartTick, paddingTop: 12 }} />
-            {allSkus.map((sku, i) => (
+            {SKUS.map((sku, i) => (
               <Bar key={sku} dataKey={sku} name={sku} fill={columnColor(sku, i)} radius={[3, 3, 0, 0]} />
             ))}
           </BarChart>
@@ -370,14 +389,12 @@ export default function MoMSection({
               <tr className="border-t-2 border-gray-300 dark:border-slate-600 font-semibold">
                 <td className="pt-3 pr-4 text-gray-500 dark:text-slate-400">Total</td>
                 {months.map((m, mi) => {
-                  const total = allSkus.reduce((s, sku) => s + (skuChartData[mi][sku] as number), 0);
-                  return (
-                    <td key={m.label} className="pt-3 px-3 text-right text-indigo-600 dark:text-indigo-400">{total}</td>
-                  );
+                  const total = SKUS.reduce((s, sku) => s + (skuChartData[mi][sku] as number), 0);
+                  return <td key={m.label} className="pt-3 px-3 text-right text-indigo-600 dark:text-indigo-400">{total}</td>;
                 })}
-                {months.slice(1).map((m, i) => {
-                  const curr = allSkus.reduce((s, sku) => s + (skuChartData[i + 1][sku] as number), 0);
-                  const prev = allSkus.reduce((s, sku) => s + (skuChartData[i][sku] as number), 0);
+                {months.slice(1).map((_, i) => {
+                  const curr = SKUS.reduce((s, sku) => s + (skuChartData[i + 1][sku] as number), 0);
+                  const prev = SKUS.reduce((s, sku) => s + (skuChartData[i][sku] as number), 0);
                   const g = pct(curr, prev);
                   return (
                     <td key={`ft-g-${i}`} className="pt-3 px-2 text-right text-[11px]">
@@ -394,6 +411,6 @@ export default function MoMSection({
           </table>
         </div>
       </Section>
-    </>
+    </div>
   );
 }

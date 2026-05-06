@@ -11,8 +11,8 @@ import MoMSection from "./MoMSection";
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 function fmtRev(n: number) {
-  if (n >= 10_00_000) return `₹${(n / 10_00_000).toFixed(2)}L`;
-  if (n >= 1_000) return `₹${(n / 1_000).toFixed(1)}K`;
+  if (n >= 1_00_000) return `₹${(n / 1_00_000).toFixed(1)}L`;
+  if (n >= 1_000)   return `₹${(n / 1_000).toFixed(1)}K`;
   return `₹${n}`;
 }
 function fmtRevFull(n: number) { return "₹" + n.toLocaleString("en-IN"); }
@@ -21,6 +21,15 @@ const STORE_PALETTE = [
   "#60A5FA","#A78BFA","#34D399","#FBBF24","#F87171",
   "#38BDF8","#FB923C","#A3E635","#E879F9","#94A3B8","#F472B6",
 ];
+
+// ─── Tab definitions ──────────────────────────────────────────────────────────
+
+const TABS = [
+  { id: "overview",  label: "MTD Overview",    icon: "📊" },
+  { id: "monthly",   label: "Monthly Trends",   icon: "📈" },
+  { id: "live",      label: "Live Sheet Data",  icon: "🗂️" },
+] as const;
+type TabId = typeof TABS[number]["id"];
 
 // ─── Reusable UI pieces ───────────────────────────────────────────────────────
 
@@ -84,9 +93,7 @@ function ConfigModal({ targets, stores, onSave, onClose }: {
   );
 }
 
-// ─── Raw / Parser Data Table ──────────────────────────────────────────────────
-// Fully dynamic: columns come from the sheet headers, not hardcoded.
-// Add any column to the Google Sheet and it appears here automatically.
+// ─── Raw / Live Data Table ────────────────────────────────────────────────────
 
 function RawDataTable({ stores, columnHeaders, grandTotalUnits, grandTotalRevenue }: {
   stores: StoreData[];
@@ -96,7 +103,6 @@ function RawDataTable({ stores, columnHeaders, grandTotalUnits, grandTotalRevenu
 }) {
   const days = stores[0]?.days ?? [];
 
-  // Per-day totals across all stores
   const dayTotals = days.map((_, di) => {
     const metrics: Record<string, number> = {};
     let total = 0;
@@ -118,25 +124,17 @@ function RawDataTable({ stores, columnHeaders, grandTotalUnits, grandTotalRevenu
     <div className="overflow-x-auto">
       <table className="w-full text-xs border-collapse">
         <thead>
-          {/* Row 1: date headers spanning metric-cols + 1 day-total col */}
           <tr className="border-b border-gray-200 dark:border-slate-600">
-            <th className="pb-2 pr-3 text-left text-gray-500 dark:text-slate-400 font-medium whitespace-nowrap" rowSpan={2}>
-              Store
-            </th>
+            <th className="pb-2 pr-3 text-left text-gray-500 dark:text-slate-400 font-medium whitespace-nowrap" rowSpan={2}>Store</th>
             {days.map((d) => (
               <th key={d.date} colSpan={columnHeaders.length + 1}
                 className="pb-2 px-1 text-center text-gray-800 dark:text-slate-200 font-semibold whitespace-nowrap border-l border-gray-100 dark:border-slate-700/50">
                 {d.date}
               </th>
             ))}
-            <th className="pb-2 px-2 text-right text-gray-500 dark:text-slate-400 font-medium whitespace-nowrap" rowSpan={2}>
-              MTD Units
-            </th>
-            <th className="pb-2 pl-3 text-right text-gray-500 dark:text-slate-400 font-medium whitespace-nowrap" rowSpan={2}>
-              MTD Revenue
-            </th>
+            <th className="pb-2 px-2 text-right text-gray-500 dark:text-slate-400 font-medium whitespace-nowrap" rowSpan={2}>MTD Units</th>
+            <th className="pb-2 pl-3 text-right text-gray-500 dark:text-slate-400 font-medium whitespace-nowrap" rowSpan={2}>MTD Revenue</th>
           </tr>
-          {/* Row 2: metric sub-headers + "Day" total under each date */}
           <tr className="border-b border-gray-200 dark:border-slate-600">
             {days.map((d) => (
               <>
@@ -147,14 +145,11 @@ function RawDataTable({ stores, columnHeaders, grandTotalUnits, grandTotalRevenu
                     {h}
                   </th>
                 ))}
-                <th key={`${d.date}-day`} className="py-1.5 px-1.5 text-right text-gray-400 dark:text-slate-500 font-medium">
-                  Day
-                </th>
+                <th key={`${d.date}-day`} className="py-1.5 px-1.5 text-right text-gray-400 dark:text-slate-500 font-medium">Day</th>
               </>
             ))}
           </tr>
         </thead>
-
         <tbody className="divide-y divide-gray-100 dark:divide-slate-700/40">
           {stores.map((s, si) => (
             <tr key={s.name} className="hover:bg-gray-50 dark:hover:bg-slate-700/20">
@@ -192,7 +187,6 @@ function RawDataTable({ stores, columnHeaders, grandTotalUnits, grandTotalRevenu
             </tr>
           ))}
         </tbody>
-
         <tfoot>
           <tr className="border-t-2 border-gray-300 dark:border-slate-600 font-semibold">
             <td className="pt-3 pr-3 text-gray-500 dark:text-slate-400">Total</td>
@@ -223,13 +217,14 @@ function RawDataTable({ stores, columnHeaders, grandTotalUnits, grandTotalRevenu
 // ─── Main Dashboard ───────────────────────────────────────────────────────────
 
 export default function Dashboard() {
-  const [data, setData]           = useState<SalesData | null>(null);
-  const [loading, setLoading]     = useState(true);
-  const [error, setError]         = useState<string | null>(null);
+  const [data, setData]             = useState<SalesData | null>(null);
+  const [loading, setLoading]       = useState(true);
+  const [error, setError]           = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
-  const [targets, setTargets]     = useState<TargetConfig>({});
+  const [targets, setTargets]       = useState<TargetConfig>({});
   const [showConfig, setShowConfig] = useState(false);
-  const [isDark, setIsDark]       = useState(true);
+  const [isDark, setIsDark]         = useState(true);
+  const [activeTab, setActiveTab]   = useState<TabId>("overview");
 
   const loadData = useCallback(async (isRefresh = false) => {
     if (isRefresh) setRefreshing(true); else setLoading(true);
@@ -265,13 +260,13 @@ export default function Dashboard() {
 
   // ── Derived ─────────────────────────────────────────────────────────────────
 
-  const stores          = data?.stores          ?? [];
-  const columnHeaders   = data?.columnHeaders   ?? [];
+  const stores            = data?.stores          ?? [];
+  const columnHeaders     = data?.columnHeaders   ?? [];
   const grandTotalUnits   = data?.grandTotalUnits   ?? 0;
   const grandTotalRevenue = data?.grandTotalRevenue ?? 0;
-  const month      = data?.month      ?? "";
-  const title      = data?.title      ?? "";
-  const lastUpdated = data?.lastUpdated ?? "";
+  const month             = data?.month      ?? "";
+  const title             = data?.title      ?? "";
+  const lastUpdated       = data?.lastUpdated ?? "";
 
   const bestStoreObj = useMemo(
     () => [...stores].sort((a, b) => b.totalQty - a.totalQty)[0] ?? null,
@@ -286,7 +281,6 @@ export default function Dashboard() {
 
   const avgRevPerUnit = grandTotalUnits > 0 ? Math.round(grandTotalRevenue / grandTotalUnits) : 0;
 
-  // Daily units chart data — one entry per date, metrics keyed by column header
   const dailyChartData = useMemo(() => {
     const map: Record<string, Record<string, number>> = {};
     for (const store of stores) {
@@ -304,7 +298,6 @@ export default function Dashboard() {
       .map(([date, metrics]) => ({ date, ...metrics }));
   }, [stores, columnHeaders]);
 
-  // Revenue by store
   const revenueByStore = useMemo(
     () => [...stores].filter(s => s.mtdRevenue > 0)
       .sort((a, b) => b.mtdRevenue - a.mtdRevenue)
@@ -312,14 +305,12 @@ export default function Dashboard() {
     [stores]
   );
 
-  // Units by store with target
   const unitsByStore = useMemo(
     () => [...stores].sort((a, b) => b.totalQty - a.totalQty)
       .map(s => ({ store: s.storeCode, storeName: s.shortName, units: s.totalQty, target: targets[s.name] ?? 30 })),
     [stores, targets]
   );
 
-  // Metric mix (pie) — total per column header across all stores & days
   const metricMix = useMemo(() => {
     const totals: Record<string, number> = {};
     for (const h of columnHeaders) totals[h] = 0;
@@ -368,9 +359,10 @@ export default function Dashboard() {
         <ConfigModal targets={targets} stores={stores} onSave={saveTargets} onClose={() => setShowConfig(false)} />
       )}
 
-      {/* Header */}
-      <header className="bg-white dark:bg-slate-900 border-b border-gray-200 dark:border-slate-800 px-6 py-4 sticky top-0 z-40">
-        <div className="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-3">
+      {/* ── Header ──────────────────────────────────────────────────────────── */}
+      <header className="bg-white dark:bg-slate-900 border-b border-gray-200 dark:border-slate-800 sticky top-0 z-40">
+        {/* Title row */}
+        <div className="px-6 py-4 max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-3">
           <div>
             <div className="flex items-center gap-2">
               <span className="text-indigo-600 dark:text-indigo-400 font-bold text-xl tracking-tight">NUUK</span>
@@ -396,160 +388,184 @@ export default function Dashboard() {
             </button>
           </div>
         </div>
+
+        {/* Tab navigation row */}
+        <div className="px-6 border-t border-gray-100 dark:border-slate-800">
+          <div className="max-w-7xl mx-auto flex gap-1 overflow-x-auto py-2">
+            {TABS.map(tab => (
+              <button key={tab.id} onClick={() => setActiveTab(tab.id)}
+                className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-all ${
+                  activeTab === tab.id
+                    ? "bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-700/50"
+                    : "text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:hover:text-slate-200 hover:bg-gray-100 dark:hover:bg-slate-800"
+                }`}>
+                <span>{tab.icon}</span>
+                <span>{tab.label}</span>
+              </button>
+            ))}
+          </div>
+        </div>
       </header>
 
+      {/* ── Main content (tab-switched) ──────────────────────────────────────── */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6 space-y-6">
 
-        {/* Summary cards */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          <Card label="MTD Units" value={grandTotalUnits.toString()} sub={`across ${stores.filter(s => s.totalQty > 0).length} stores`} color="text-indigo-600 dark:text-indigo-400" />
-          <Card label="MTD Revenue" value={fmtRev(grandTotalRevenue)} sub={grandTotalRevenue > 0 ? fmtRevFull(grandTotalRevenue) : "not yet entered"} color="text-emerald-600 dark:text-emerald-400" />
-          <Card label="Top Store" value={bestStoreObj?.storeCode ?? "—"} sub={bestStoreObj?.shortName ?? "by units sold"} color="text-amber-600 dark:text-amber-400" />
-          <Card label="Avg Rev / Unit" value={avgRevPerUnit > 0 ? fmtRev(avgRevPerUnit) : "—"} sub="blended across products" />
-        </div>
-
-        {/* Daily units chart */}
-        <Section title="Daily Units by Product" sub="All stores combined — stacked by product">
-          <div className="px-5 pb-5">
-            {dailyChartData.length === 0 ? (
-              <p className="text-gray-400 dark:text-slate-500 text-sm text-center py-10">No data</p>
-            ) : (
-              <ResponsiveContainer width="100%" height={300}>
-                <BarChart data={dailyChartData} margin={{ top: 4, right: 8, left: -8, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke={chartGrid} />
-                  <XAxis dataKey="date" tick={{ fill: chartTick, fontSize: 12 }} axisLine={false} tickLine={false} />
-                  <YAxis tick={{ fill: chartTick, fontSize: 12 }} axisLine={false} tickLine={false} allowDecimals={false} />
-                  <Tooltip contentStyle={tooltipStyle} cursor={{ fill: chartCursor }} />
-                  <Legend wrapperStyle={{ fontSize: 12, color: chartTick, paddingTop: 12 }} />
-                  {columnHeaders.map((h, i) => (
-                    <Bar key={h} dataKey={h} name={h} stackId="a" fill={columnColor(h, i)}
-                      radius={i === columnHeaders.length - 1 ? [4, 4, 0, 0] : [0, 0, 0, 0]} />
-                  ))}
-                </BarChart>
-              </ResponsiveContainer>
-            )}
-          </div>
-        </Section>
-
-        {/* Revenue + Units by store */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <Section title="MTD Revenue by Store" sub="Actual revenue from sheet">
-            <div className="px-5 pb-5">
-              {revenueByStore.length === 0 ? (
-                <p className="text-gray-400 dark:text-slate-500 text-sm text-center py-10">No revenue data entered yet</p>
-              ) : (
-                <ResponsiveContainer width="100%" height={260}>
-                  <BarChart data={revenueByStore} layout="vertical" margin={{ top: 0, right: 16, left: 0, bottom: 0 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke={chartGrid} horizontal={false} />
-                    <XAxis type="number" tick={{ fill: chartTick, fontSize: 10 }} axisLine={false} tickLine={false} tickFormatter={fmtRev} />
-                    <YAxis type="category" dataKey="store" width={96} axisLine={false} tickLine={false}
-                      tick={(props) => {
-                        const { x, y, payload } = props;
-                        const code = payload.value as string;
-                        const name = codeToName[code] ?? "";
-                        return (
-                          <g transform={`translate(${x},${y})`}>
-                            <text textAnchor="end" fill={chartTick} fontSize={10} fontWeight={600} dy={-3}>{code}</text>
-                            <text textAnchor="end" fill={chartTickDim} fontSize={8} dy={9}>{name}</text>
-                          </g>
-                        );
-                      }}
-                    />
-                    <Tooltip contentStyle={tooltipStyle}
-                      formatter={(v: number) => [fmtRevFull(v), "Revenue"]}
-                      labelFormatter={(label: string) => `${label} · ${codeToName[label] ?? ""}`}
-                      cursor={{ fill: chartCursor }} />
-                    <Bar dataKey="revenue" radius={[0, 4, 4, 0]}>
-                      {revenueByStore.map((_, i) => <Cell key={i} fill={STORE_PALETTE[i % STORE_PALETTE.length]} />)}
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
-              )}
+        {/* ── Tab: MTD Overview ─────────────────────────────────────────────── */}
+        {activeTab === "overview" && (
+          <>
+            {/* Summary cards */}
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+              <Card label="MTD Units" value={grandTotalUnits.toString()} sub={`across ${stores.filter(s => s.totalQty > 0).length} stores`} color="text-indigo-600 dark:text-indigo-400" />
+              <Card label="MTD Revenue" value={fmtRev(grandTotalRevenue)} sub={grandTotalRevenue > 0 ? fmtRevFull(grandTotalRevenue) : "not yet entered"} color="text-emerald-600 dark:text-emerald-400" />
+              <Card label="Top Store" value={bestStoreObj?.storeCode ?? "—"} sub={bestStoreObj?.shortName ?? "by units sold"} color="text-amber-600 dark:text-amber-400" />
+              <Card label="Avg Rev / Unit" value={avgRevPerUnit > 0 ? fmtRev(avgRevPerUnit) : "—"} sub="blended across products" />
             </div>
-          </Section>
 
-          <Section title="MTD Units by Store" sub="vs monthly target">
-            <div className="px-5 pb-5 space-y-3">
-              {unitsByStore.map((row, i) => {
-                const pct = Math.min(100, row.target > 0 ? (row.units / row.target) * 100 : 0);
-                return (
-                  <div key={row.store}>
-                    <div className="flex justify-between text-xs mb-1">
-                      <span>
-                        <span className="text-gray-800 dark:text-slate-200 font-semibold">{row.store}</span>
-                        <span className="text-gray-400 dark:text-slate-500 ml-1">({row.storeName})</span>
-                      </span>
-                      <span className="text-gray-500 dark:text-slate-400">{row.units} / {row.target}</span>
-                    </div>
-                    <div className="h-2 bg-gray-200 dark:bg-slate-700 rounded-full overflow-hidden">
-                      <div className="h-full rounded-full transition-all duration-500"
-                        style={{ width: `${pct}%`, background: STORE_PALETTE[i % STORE_PALETTE.length] }} />
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </Section>
-        </div>
+            {/* Daily units chart */}
+            <Section title="Daily Units by Product" sub="All stores combined — stacked by product">
+              <div className="px-5 pb-5">
+                {dailyChartData.length === 0 ? (
+                  <p className="text-gray-400 dark:text-slate-500 text-sm text-center py-10">No data</p>
+                ) : (
+                  <ResponsiveContainer width="100%" height={300}>
+                    <BarChart data={dailyChartData} margin={{ top: 4, right: 8, left: -8, bottom: 0 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke={chartGrid} />
+                      <XAxis dataKey="date" tick={{ fill: chartTick, fontSize: 12 }} axisLine={false} tickLine={false} />
+                      <YAxis tick={{ fill: chartTick, fontSize: 12 }} axisLine={false} tickLine={false} allowDecimals={false} />
+                      <Tooltip contentStyle={tooltipStyle} cursor={{ fill: chartCursor }} />
+                      <Legend wrapperStyle={{ fontSize: 12, color: chartTick, paddingTop: 12 }} />
+                      {columnHeaders.map((h, i) => (
+                        <Bar key={h} dataKey={h} name={h} stackId="a" fill={columnColor(h, i)}
+                          radius={i === columnHeaders.length - 1 ? [4, 4, 0, 0] : [0, 0, 0, 0]} />
+                      ))}
+                    </BarChart>
+                  </ResponsiveContainer>
+                )}
+              </div>
+            </Section>
 
-        {/* Product mix donut */}
-        <Section title="Product Mix — MTD" sub="Share of units sold per product across all stores">
-          <div className="px-5 pb-5 flex flex-wrap gap-8 items-center justify-center lg:justify-start">
-            <div className="flex-shrink-0">
-              {metricMix.length > 0 ? (
-                <PieChart width={200} height={200}>
-                  <Pie data={metricMix} cx={100} cy={100} innerRadius={55} outerRadius={90} paddingAngle={3} dataKey="value">
-                    {metricMix.map((e, i) => <Cell key={i} fill={e.color} />)}
-                  </Pie>
-                  <Tooltip contentStyle={tooltipStyle} formatter={(v: number, n: string) => [`${v} units`, n]} />
-                </PieChart>
-              ) : <p className="text-gray-400 dark:text-slate-500 text-sm py-10">No data</p>}
-            </div>
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-8 gap-y-3">
-              {metricMix.map((e) => (
-                <div key={e.name} className="flex items-center gap-2">
-                  <span className="w-3 h-3 rounded-full flex-shrink-0" style={{ background: e.color }} />
-                  <div>
-                    <p className="text-xs text-gray-500 dark:text-slate-400">{e.name}</p>
-                    <p className="text-sm font-semibold text-gray-900 dark:text-white">{e.value} units</p>
-                    <p className="text-xs text-gray-400 dark:text-slate-500">
-                      {grandTotalUnits > 0 ? Math.round((e.value / grandTotalUnits) * 100) : 0}%
-                    </p>
-                  </div>
+            {/* Revenue + Units by store */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <Section title="MTD Revenue by Store" sub="Actual revenue from sheet">
+                <div className="px-5 pb-5">
+                  {revenueByStore.length === 0 ? (
+                    <p className="text-gray-400 dark:text-slate-500 text-sm text-center py-10">No revenue data entered yet</p>
+                  ) : (
+                    <ResponsiveContainer width="100%" height={260}>
+                      <BarChart data={revenueByStore} layout="vertical" margin={{ top: 0, right: 16, left: 0, bottom: 0 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke={chartGrid} horizontal={false} />
+                        <XAxis type="number" tick={{ fill: chartTick, fontSize: 10 }} axisLine={false} tickLine={false} tickFormatter={fmtRev} />
+                        <YAxis type="category" dataKey="store" width={96} axisLine={false} tickLine={false}
+                          tick={(props) => {
+                            const { x, y, payload } = props;
+                            const code = payload.value as string;
+                            const name = codeToName[code] ?? "";
+                            return (
+                              <g transform={`translate(${x},${y})`}>
+                                <text textAnchor="end" fill={chartTick} fontSize={10} fontWeight={600} dy={-3}>{code}</text>
+                                <text textAnchor="end" fill={chartTickDim} fontSize={8} dy={9}>{name}</text>
+                              </g>
+                            );
+                          }}
+                        />
+                        <Tooltip contentStyle={tooltipStyle}
+                          formatter={(v: number) => [fmtRevFull(v), "Revenue"]}
+                          labelFormatter={(label: string) => `${label} · ${codeToName[label] ?? ""}`}
+                          cursor={{ fill: chartCursor }} />
+                        <Bar dataKey="revenue" radius={[0, 4, 4, 0]}>
+                          {revenueByStore.map((_, i) => <Cell key={i} fill={STORE_PALETTE[i % STORE_PALETTE.length]} />)}
+                        </Bar>
+                      </BarChart>
+                    </ResponsiveContainer>
+                  )}
                 </div>
-              ))}
+              </Section>
+
+              <Section title="MTD Units by Store" sub="vs monthly target">
+                <div className="px-5 pb-5 space-y-3">
+                  {unitsByStore.map((row, i) => {
+                    const pct = Math.min(100, row.target > 0 ? (row.units / row.target) * 100 : 0);
+                    return (
+                      <div key={row.store}>
+                        <div className="flex justify-between text-xs mb-1">
+                          <span>
+                            <span className="text-gray-800 dark:text-slate-200 font-semibold">{row.store}</span>
+                            <span className="text-gray-400 dark:text-slate-500 ml-1">({row.storeName})</span>
+                          </span>
+                          <span className="text-gray-500 dark:text-slate-400">{row.units} / {row.target}</span>
+                        </div>
+                        <div className="h-2 bg-gray-200 dark:bg-slate-700 rounded-full overflow-hidden">
+                          <div className="h-full rounded-full transition-all duration-500"
+                            style={{ width: `${pct}%`, background: STORE_PALETTE[i % STORE_PALETTE.length] }} />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </Section>
             </div>
-          </div>
-        </Section>
 
-        {/* ── Month-on-Month & SKU sections ─────────────────────────────────── */}
-        <MoMSection
-          liveStores={stores}
-          liveColumnHeaders={columnHeaders}
-          liveMonth={month}
-          liveTotalUnits={grandTotalUnits}
-          liveTotalRevenue={grandTotalRevenue}
-          isDark={isDark}
-        />
+            {/* Product mix donut */}
+            <Section title="Product Mix — MTD" sub="Share of units sold per product across all stores">
+              <div className="px-5 pb-5 flex flex-wrap gap-8 items-center justify-center lg:justify-start">
+                <div className="flex-shrink-0">
+                  {metricMix.length > 0 ? (
+                    <PieChart width={200} height={200}>
+                      <Pie data={metricMix} cx={100} cy={100} innerRadius={55} outerRadius={90} paddingAngle={3} dataKey="value">
+                        {metricMix.map((e, i) => <Cell key={i} fill={e.color} />)}
+                      </Pie>
+                      <Tooltip contentStyle={tooltipStyle} formatter={(v: number, n: string) => [`${v} units`, n]} />
+                    </PieChart>
+                  ) : <p className="text-gray-400 dark:text-slate-500 text-sm py-10">No data</p>}
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-8 gap-y-3">
+                  {metricMix.map((e) => (
+                    <div key={e.name} className="flex items-center gap-2">
+                      <span className="w-3 h-3 rounded-full flex-shrink-0" style={{ background: e.color }} />
+                      <div>
+                        <p className="text-xs text-gray-500 dark:text-slate-400">{e.name}</p>
+                        <p className="text-sm font-semibold text-gray-900 dark:text-white">{e.value} units</p>
+                        <p className="text-xs text-gray-400 dark:text-slate-500">
+                          {grandTotalUnits > 0 ? Math.round((e.value / grandTotalUnits) * 100) : 0}%
+                        </p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </Section>
+          </>
+        )}
 
-        {/* ── Parser / Raw Data Table ─────────────────────────────────────────
-            Always visible. Columns are driven entirely by the Google Sheet headers.
-            Add a column to the sheet → it appears here automatically.
-        ────────────────────────────────────────────────────────────────────── */}
-        <Section
-          title="Live Data from Google Sheet"
-          sub={`Parsed directly from the sheet · ${columnHeaders.length} metrics tracked · add a column to the sheet and it appears here automatically`}
-          noPad
-        >
-          <div className="px-5 pb-5">
-            <RawDataTable
-              stores={stores}
-              columnHeaders={columnHeaders}
-              grandTotalUnits={grandTotalUnits}
-              grandTotalRevenue={grandTotalRevenue}
-            />
-          </div>
-        </Section>
+        {/* ── Tab: Monthly Trends ───────────────────────────────────────────── */}
+        {activeTab === "monthly" && (
+          <MoMSection
+            liveStores={stores}
+            liveColumnHeaders={columnHeaders}
+            liveMonth={month}
+            liveTotalUnits={grandTotalUnits}
+            liveTotalRevenue={grandTotalRevenue}
+            isDark={isDark}
+          />
+        )}
+
+        {/* ── Tab: Live Sheet Data ──────────────────────────────────────────── */}
+        {activeTab === "live" && (
+          <Section
+            title="Live Data from Google Sheet"
+            sub={`Parsed directly from the sheet · ${columnHeaders.length} metrics tracked · add a column to the sheet and it appears here automatically`}
+            noPad
+          >
+            <div className="px-5 pb-5">
+              <RawDataTable
+                stores={stores}
+                columnHeaders={columnHeaders}
+                grandTotalUnits={grandTotalUnits}
+                grandTotalRevenue={grandTotalRevenue}
+              />
+            </div>
+          </Section>
+        )}
 
         <p className="text-center text-xs text-gray-400 dark:text-slate-600 pb-6">
           Data fetched live · {title}
