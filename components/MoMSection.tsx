@@ -121,7 +121,18 @@ export default function MoMSection({
     return map;
   }, [liveStores]);
 
-  // Combined months: historical (Mar, Apr) + live (May MTD)
+  // Only include live month data when it's a closed (past) month
+  const liveMonthIsCurrent = useMemo(() => {
+    if (!liveMonth) return true;
+    const now = new Date();
+    const parsed = new Date(`${liveMonth} 1`);
+    return (
+      parsed.getMonth() === now.getMonth() &&
+      parsed.getFullYear() === now.getFullYear()
+    );
+  }, [liveMonth]);
+
+  // Combined months: historical (Mar, Apr) + live only if month has closed
   const months = useMemo<MonthEntry[]>(() => {
     const hist = HISTORICAL_MONTHS.map(hm => ({
       label: hm.shortMonth,
@@ -130,18 +141,19 @@ export default function MoMSection({
       totalUnits: hm.totalUnits,
       storeMap: Object.fromEntries(hm.stores.map(s => [s.storeCode, s])),
     }));
+    if (liveMonthIsCurrent) return hist;
     const liveLabel = liveMonth ? liveMonth.split(" ")[0].slice(0, 3) : "MTD";
     return [
       ...hist,
       {
-        label: `${liveLabel} (MTD)`,
-        month: liveMonth ? `${liveMonth} — month to date` : "Current month (MTD)",
+        label: liveLabel,
+        month: liveMonth ?? "Current month",
         totalRevenue: liveTotalRevenue,
         totalUnits: liveTotalUnits,
         storeMap: liveStoreMap,
       },
     ];
-  }, [liveMonth, liveTotalRevenue, liveTotalUnits, liveStoreMap]);
+  }, [liveMonth, liveMonthIsCurrent, liveTotalRevenue, liveTotalUnits, liveStoreMap]);
 
   // Canonical store rows (April has all 9 active stores)
   const canonicalStores = HISTORICAL_MONTHS[1].stores;
@@ -317,7 +329,7 @@ export default function MoMSection({
         {isRev && (
           <p className="mt-3 text-[10px] text-gray-400 dark:text-slate-600">
             Full values — Mar: {fmtLFull(HISTORICAL_MONTHS[0].totalRevenue)} · Apr: {fmtLFull(HISTORICAL_MONTHS[1].totalRevenue)}
-            {liveTotalRevenue > 0 && ` · ${months[months.length - 1].label}: ${fmtLFull(liveTotalRevenue)}`}
+            {!liveMonthIsCurrent && liveTotalRevenue > 0 && ` · ${months[months.length - 1].label}: ${fmtLFull(liveTotalRevenue)}`}
           </p>
         )}
       </Section>
