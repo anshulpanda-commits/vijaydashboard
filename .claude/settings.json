@@ -7,7 +7,7 @@
             "type": "command",
             "timeout": 60,
             "statusMessage": "Deploying changes to Vercel…",
-            "command": "cd \"/Users/mac/Claude Code/vijay-dashboard/.claude/worktrees/heuristic-morse-62796a\" && if ! git diff --quiet || ! git diff --cached --quiet || [ -n \"$(git ls-files --others --exclude-standard)\" ]; then git add -A && git commit -m \"Auto-deploy: $(date +'%Y-%m-%d %H:%M')\" && git push origin HEAD:main && echo '{\"systemMessage\": \"✓ Pushed to main — Vercel is deploying\"}'; else echo '{\"systemMessage\": \"No changes to deploy\"}'; fi"
+            "command": "cd \"/Users/mac/Claude Code/vijay-dashboard/.claude/worktrees/heuristic-morse-62796a\" && if ! git diff --quiet || ! git diff --cached --quiet || [ -n \"$(git ls-files --others --exclude-standard)\" ]; then git add -A && git commit -m \"Auto-deploy: $(date +'%Y-%m-%d %H:%M')\" && git pull origin main --rebase --autostash && git push origin HEAD:main && echo '{\"systemMessage\": \"✓ Pushed to main — Vercel is deploying\"}'; else echo '{\"systemMessage\": \"No changes to deploy\"}'; fi"
           }
         ]
       }
